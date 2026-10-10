@@ -33,11 +33,11 @@ new conversation. A seat held off ranks below them.
 - **Over time.** One window across the recorded cycles, counting every seat in
   the pool whatever its priority tier. Stacked, the default, piles the seats'
   use into the pool's total against what the pool holds, one full window per
-  seat able to spend it, shades each seat's refused stretches grey, and runs
+  seat able to spend it, stripes each seat's refused stretches red, and runs
   past now to show what comes back at each reset if no more is used. Lines
-  draws each seat's use, with each refusal and what ended it, and its side
-  list totals the pool's use in seats' worth a week. Both mark the stretches
-  in which every seat was refused at once. On a weekly window, brackets over
+  draws each seat's use, with each refusal taped as on Current window pace and
+  what ended it, and its side list totals the pool's use in seats' worth a
+  week. Both shade the stretches in which every seat was refused at once. On a weekly window, brackets over
   the plot give the pool's use per local day, or per week from Monday once
   days are too narrow to label, and each bracket's tooltip sets that against
   what the pool renews and splits it by seat. If every seat is on the same

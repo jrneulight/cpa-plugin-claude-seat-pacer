@@ -27,7 +27,6 @@
   --track:        #e6e5df;
   --track-edge:   #4f4e4a;
   --emph:         rgba(42,120,214,.07);
-  --refused:      rgba(140,138,130,.55);
 
   /* The four tones a chip can take carry the non-colour encoding — glyph, bar
      fill, meter fill — so each clears 3:1 against both the card and the
@@ -82,7 +81,6 @@
     --track-edge: #999892;
     --critical:   #e05050;
     --emph:       rgba(57,135,229,.12);
-    --refused:    rgba(58,58,58,.6);
     --good:       #0ca30c;
     --serious:    #ec835a;
     --info:       #3987e5;
@@ -118,7 +116,6 @@
   --track:      #2c2c2a;
   --track-edge: #999892;
   --emph:       rgba(57,135,229,.12);
-  --refused:    rgba(58,58,58,.6);
   --critical:   #e05050;
   --good:       #0ca30c;
   --serious:    #ec835a;
@@ -584,7 +581,7 @@ svg.pace path.hist-gap { fill: none; stroke-width: 1.4; stroke-linecap: round; o
    enough that the line still shows. */
 svg.pace rect.lock-tape { opacity: .8; }
 svg.pace pattern rect.tape-red { fill: var(--critical); }
-svg.pace pattern path.tape-black { fill: #161616; }
+svg.pace pattern .tape-black { fill: #161616; }
 /* A line's sections take the pointer, the drawn strokes under them never do;
    the section under the pointer shows in the seat's colour. A square cap
    closes the corners of a step and gives an instant a target of its own. */
@@ -604,7 +601,7 @@ svg.pace g.reset-mark:focus-visible circle { stroke: var(--focus); stroke-width:
 svg.pace text.reset-label { paint-order: stroke; stroke: var(--surface-1); stroke-width: 3px; stroke-linejoin: round; }
 .pace-card { overflow-x: auto; }
 .pace-card .legend { margin: 8px 0 0; }
-.pace-card .legend.tools-legend { margin: 0 0 0 auto; }
+#pace-legend { min-height: 13px; }
 /* The plot and the ranking it produces, side by side: the plot carries the
    inputs, the list the answer. The list's column is one fixed width, so the
    plot reads at the same size on every pool and every refresh: a seat named
@@ -644,14 +641,14 @@ svg.pace text.reset-label { paint-order: stroke; stroke: var(--surface-1); strok
      they lay out at one width at any height and the measure holds. */
   #hist-rank { height: min(380px, var(--hist-h, 380px)); scrollbar-gutter: stable; }
   .hist-range { display: none; }
-  /* Either form's legend can take two rows here, so each keeps two. */
-  #hist-legend { min-height: 27px; align-content: flex-start; }
+  /* A legend can take two rows here, so each view's keeps two. */
+  :is(#pace-legend, #hist-legend) { min-height: 27px; align-content: flex-start; }
 }
 @media (max-width: 620px) {
   /* The views' lines and legends take two and three rows here, so each
      keeps that many whichever view shows. */
   .rank-formula { min-height: calc(2 * 1.45em); }
-  #hist-legend { min-height: 44px; align-content: flex-start; }
+  :is(#pace-legend, #hist-legend) { min-height: 44px; align-content: flex-start; }
 }
 /* The sum a listed cost is, from the running weights, in one line a reader
    can check a figure against the marks' labels by. It runs the width of the
@@ -829,7 +826,9 @@ svg.hist-tl rect.hs-future { fill: var(--emph); }
    pool holds, one window per seat on the roster. */
 svg.hist-tl path.hs-stack { stroke: none; opacity: .45; }
 svg.hist-tl path.hs-stack.hs-proj { opacity: .16; }
-svg.hist-tl path.hs-refused { fill: var(--refused); stroke: none; }
+svg.hist-tl path.hs-refused { stroke: none; opacity: .9; }
+svg.hist-tl rect.hs-all-refused { fill: var(--critical); opacity: .14; }
+svg.hist-tl rect.hs-all-refused-edge { fill: var(--critical); opacity: .9; }
 svg.hist-tl path.hs-edge { fill: none; stroke-width: 1.5; stroke-linejoin: round; pointer-events: none; }
 svg.hist-tl path.hs-edge.hs-proj { stroke-dasharray: 4 3; opacity: .55; }
 svg.hist-tl path.hs-cap { fill: none; stroke: var(--ink-1); stroke-width: 1.5; opacity: .75; pointer-events: none; }
@@ -1228,13 +1227,10 @@ time[data-ts] { cursor: help; }
         <span class="sec-line"></span>
       </div>
       <div class="card pace-card">
-        <!-- The window switch, and at the row's far end the line styles the
-             view draws, so the legend takes no row of its own and the card
-             keeps one height across views. The script fills both and shows
-             the body of the window pressed. -->
+        <!-- The window switch. The script fills it and shows the body of the
+             window pressed. -->
         <div class="hist-tools">
           <div class="pace-view" id="pace-view" role="group" aria-label="Window shown"></div>
-          <ul class="legend tools-legend" id="pace-legend" aria-label="Legend"></ul>
         </div>
         <div id="pace-week">
         <!-- The sum a cost is, from the running weights, across the card: it
@@ -1261,6 +1257,9 @@ time[data-ts] { cursor: help; }
           </div>
         </div>
         </div>
+        <!-- What the plot draws that does not name itself, under it as on the
+             other charts, one row high whichever view shows. -->
+        <ul class="legend" id="pace-legend" aria-label="Plot marks"></ul>
         <!-- Static and shared by every view, so the fold's open state and a
              focused summary outlive the refresh and a switch of window. Both
              notes sit in one cell, so the open fold is as tall as the longer
@@ -3708,8 +3707,13 @@ time[data-ts] { cursor: help; }
   var SW_LOCK = "height:4px;border-radius:2px;opacity:.8;" +
     "background:repeating-linear-gradient(133deg, var(--critical) 0 3.28px, #161616 3.28px 4.38px)";
   var LOCK_KEY = "refused";
-  var SW_SHADE = "height:10px;width:14px;border-radius:2px;background:linear-gradient(var(--refused),var(--refused)),var(--ink-3)";
-  var POOL_KEY = "every seat refused (under the axis)";
+  var SW_ALL_REFUSED = "height:10px;background:linear-gradient(var(--critical) 0 3px, " +
+    "color-mix(in srgb, var(--critical) 30%, transparent) 3px)";
+  var ALL_REFUSED_KEY = "every seat refused";
+  /* A present mark, and one the provider is refusing now. */
+  var SW_MARK = "box-sizing:border-box;width:13px;height:13px;margin:0 .5px;border-radius:50%;" +
+    "border:1.5px solid var(--ink-2);background:radial-gradient(circle, var(--ink-2) 0 2.5px, transparent 3px)";
+  var SW_MARK_LIVE = SW_MARK.replace("1.5px solid var(--ink-2)", "2px solid var(--critical)");
   var SW_SIGN = "height:0;border-top:2px dotted var(--ink-2)";
   var EST_KEY = "estimated from token spend";
   var SW_CURVE = "height:0;border-top:1.5px dashed var(--ink-1);opacity:.5";
@@ -3898,16 +3902,18 @@ time[data-ts] { cursor: help; }
     svg("rect", { "class": "lock-tape", x: x0, y: top, width: w, height: hh, rx: hh / 2, fill: "url(#" + id + ")" }, parent);
   }
 
-  /* Draws each pool-wide refusal between t0 and t1 as tape at y, cut to the
-     plot's x0 to x1, with its stretch in the tooltip. */
-  function poolTape(parent, spans, t0, t1, xOf, y, x0, x1) {
+  /* Shades each pool-wide refusal between t0 and t1 from y down hgt, cut to
+     the plot's x0 to x1, under a solid edge at its top at least 3px wide so a
+     brief one still shows, with its stretch in the tooltip. */
+  function allRefusedBands(parent, spans, t0, t1, xOf, y, hgt, x0, x1) {
     spans.forEach(function (sp) {
       if (sp[1] <= t0 || sp[0] >= t1) return;
       var a = clamp(xOf(Math.max(sp[0], t0)), x0, x1), b = clamp(xOf(Math.min(sp[1], t1)), x0, x1);
-      var g = svg("g", {}, parent);
-      g.setAttribute("data-tip", "every seat refused\n" + absTime(new Date(sp[0])) + " – " + absTime(new Date(sp[1])) +
+      var w = Math.max(3, b - a), g = svg("g", {}, parent);
+      g.setAttribute("data-tip", ALL_REFUSED_KEY + "\n" + absTime(new Date(sp[0])) + " – " + absTime(new Date(sp[1])) +
         " (" + durText(Math.round((sp[1] - sp[0]) / 1000)) + ")");
-      tapeRun(g, a, b, y);
+      svg("rect", { "class": "hs-all-refused", x: a, y: y, width: Math.max(1, b - a), height: hgt }, g);
+      svg("rect", { "class": "hs-all-refused-edge", x: (a + b - w) / 2, y: y, width: w, height: 3 }, g);
     });
   }
 
@@ -4426,7 +4432,7 @@ time[data-ts] { cursor: help; }
        its weight in the cost; the weekly window counts whole. The group's
        role="img" keeps the label out of the accessibility tree; the gap is
        in its name. */
-    var labels = [], anyEst = false, anyUnrec = false, anyLock = false;
+    var labels = [], anyEst = false, anyUnrec = false, anyLock = false, anyLive = false;
     /* Three layers, because SVG paints in document order and a seat drawn
        later would otherwise run its recorded line across an earlier seat's
        mark and label. Every line goes in the lowest layer, every limit's
@@ -4496,6 +4502,7 @@ time[data-ts] { cursor: help; }
       setTip(g, tip);
       svg("circle", { "class": "hit", cx: cx, cy: cy, r: 13, fill: "transparent" }, g);
       presentMark(g, cx, cy, col, locks.live.length > 0);
+      if (locks.live.length) anyLive = true;
     }
 
     var plotted = 0;
@@ -4518,7 +4525,7 @@ time[data-ts] { cursor: help; }
         "t-muted", { "font-size": 11.5, "text-anchor": "middle" });
     }
 
-    lineLegend($("pace-legend"), anyEst, anyUnrec, anyLock);
+    lineLegend($("pace-legend"), plotted > 0, anyLive, anyEst, anyUnrec, anyLock);
     renderRank(st, seats, ranks, view);
     renderPaceNote(st);
   }
@@ -4585,16 +4592,23 @@ time[data-ts] { cursor: help; }
     });
   }
 
-  /* The line styles a recorded line can take past the plain one, each only
-     where the chart draws it. The curve names itself on the plot, a mark is
-     a seat's reading now, and its gap shows on pointing at it, which the
-     note says; a legend with nothing to name is hidden. */
-  function lineLegend(leg, anyEst, anyUnrec, anyLock) {
-    leg.textContent = "";
+  /* The present mark, in its refused form where one is drawn, then the
+     line styles a recorded line can take past the plain one, each only
+     where the chart draws it. Both line charts key these alike. */
+  function markLegend(leg, anyMark, anyLive, anyEst, anyUnrec) {
+    if (anyMark) legendRow(leg, SW_MARK, "now");
+    if (anyLive) legendRow(leg, SW_MARK_LIVE, "refused now");
     if (anyEst) legendRow(leg, SW_EST, EST_KEY);
     if (anyUnrec) legendRow(leg, SW_GAP, UNRECORDED_KEY);
+  }
+
+  /* Current window pace's legend: what markLegend keys, then the tape. The
+     curve names itself on the plot, and a mark's gap shows on pointing at
+     it, which the note says. */
+  function lineLegend(leg, anyMark, anyLive, anyEst, anyUnrec, anyLock) {
+    leg.textContent = "";
+    markLegend(leg, anyMark, anyLive, anyEst, anyUnrec);
     if (anyLock) legendRow(leg, SW_LOCK, LOCK_KEY);
-    leg.hidden = !leg.childNodes.length;
   }
 
   /* What both charts' notes say about a line's stretches, given the pause,
@@ -4848,7 +4862,7 @@ time[data-ts] { cursor: help; }
       counts ? curveLabelText(paceCfg, "target", function (e) { return (e * SESSION_HOURS).toFixed(1) + " h"; }) : "reference curve, not paced",
       "t-muted curve-label", { "font-size": 10.5, "text-anchor": "end", "font-weight": 600 });
 
-    var plotted = 0, labels = [], anyEst = false, anyUnrec = false, anyLock = false;
+    var plotted = 0, labels = [], anyEst = false, anyUnrec = false, anyLock = false, anyLive = false;
     /* Three layers, as on the 7-day views: every line below every limit's
        tape, and both below every mark and label, so a seat drawn later cannot
        run its line or its tape across an earlier seat's reading. */
@@ -4916,6 +4930,7 @@ time[data-ts] { cursor: help; }
       }
       svg("circle", { "class": "hit", cx: cx, cy: cy, r: 13, fill: "transparent" }, hg);
       presentMark(hg, cx, cy, col, locks5.live.length > 0);
+      if (locks5.live.length) anyLive = true;
     });
 
     settleLabels(labels, { x0: m.l, x1: m.l + pw, y0: m.t, y1: m.t + ph }, root);
@@ -4927,7 +4942,7 @@ time[data-ts] { cursor: help; }
         "t-muted", { "font-size": 11.5, "text-anchor": "middle" });
     }
 
-    lineLegend($("pace-legend"), anyEst, anyUnrec, anyLock);
+    lineLegend($("pace-legend"), plotted > 0, anyLive, anyEst, anyUnrec, anyLock);
     sessionList($("session-rank"), series.map(function (s) {
       var o = currentOutlook(s.auth, "five_hour", "", paceCfg, now);
       /* A seat whose reading the scorer cannot use, too old or never taken,
@@ -5543,7 +5558,7 @@ time[data-ts] { cursor: help; }
        its reset for a finished one, the present reading for the newest. Its
        refusal spans, its vertices and its sections are read over that
        stretch, as Current window pace reads them over one window. */
-    var anyEst = false, anyGap = false, anyLock = false;
+    var anyEst = false, anyGap = false, anyLock = false, anyMark = false, anyLive = false;
     var idleMs = view.weekly ? PACE_IDLE_MS : SESSION_IDLE_MS;
     var data = seats.map(function (a) {
       var sd = seatUse(a, view, now), wins = sd.wins, cur = sd.cur, resets = sd.resets, dur = sd.dur;
@@ -5572,6 +5587,12 @@ time[data-ts] { cursor: help; }
           if (s.fresh && s.t - win.samples[j - 1].t >= UNRECORDED_MS) anyGap = true;
         });
       });
+      /* The present reading is ringed in the critical tone while the
+         provider refuses the seat. */
+      var newest = wins[wins.length - 1];
+      sd.live = cur !== null && !!newest && newest.locks.live.length > 0;
+      if (cur !== null) anyMark = true;
+      if (sd.live) anyLive = true;
       sd.done = wins.filter(function (win) { return win.at !== null && win.at <= now; }).map(function (win) {
         var last = win.samples[win.samples.length - 1];
         return { at: win.at, u: last.u, est: !!last.est };
@@ -5805,7 +5826,7 @@ time[data-ts] { cursor: help; }
        seat's band lifts that seat. */
     function drawStack(root, layer, X, Y, t0, t1, m, pw, ph) {
       /* Each seat's refusals, merged, bottom first; their ends are breakpoints
-         of the stack so a shade covers exactly its stretch. */
+         of the stack so the stripes cover exactly its stretch. */
       var refused = order.map(function (i) { return refusedSpans(data[i].a, view, t0, t1, now); });
       var ends = [now];
       refused.forEach(function (sps) { sps.forEach(function (sp) { ends.push(sp[0], sp[1]); }); });
@@ -5813,9 +5834,14 @@ time[data-ts] { cursor: help; }
       var zero = st.ts.map(function () { return 0; });
       var g = svg("g", {}, layer);
       svg("rect", { "class": "hs-hit", x: m.l, y: m.t, width: pw, height: ph }, g);
-      /* Three layers: every band's fill, then a grey shade over a band while
-         the provider refused its seat, then every band's edge over both. */
+      /* Three layers: every band's fill, then red stripes at the tape's
+         angle over a band while the provider refused its seat, its colour
+         showing between them, then every band's edge over both. */
       var gFill = svg("g", {}, g), gShade = svg("g", {}, g), gEdge = svg("g", {}, g);
+      var defs = root.querySelector("defs") || svg("defs", {}, root);
+      var hatch = svg("pattern", { id: "hs-hatch", patternUnits: "userSpaceOnUse", width: 4.38, height: 4.38,
+        patternTransform: "rotate(43)" }, defs);
+      svg("rect", { "class": "tape-red", width: 1.6, height: 4.38 }, hatch);
       order.forEach(function (i, k) {
         var sd = data[i], top = st.tops[k], bot = k ? st.tops[k - 1] : zero;
         var gs = svg("g", { "class": "pt-line", "data-seat": sd.a.auth_id }, gFill);
@@ -5829,7 +5855,7 @@ time[data-ts] { cursor: help; }
         if (!refused[k].length) return;
         var gr = svg("g", { "class": "pt-tape", "data-seat": sd.a.auth_id }, gShade);
         refused[k].forEach(function (sp) {
-          svg("path", { "class": "hs-refused", d: stepArea(st.ts, top, bot, X, Y, sp[0], sp[1]) }, gr);
+          svg("path", { "class": "hs-refused", d: stepArea(st.ts, top, bot, X, Y, sp[0], sp[1]), fill: "url(#hs-hatch)" }, gr);
         });
       });
       var caps = [t0].concat(heldEdges.filter(function (t) { return t > t0 && t < t1; }).sort(function (x, y) { return x - y; }));
@@ -6103,6 +6129,7 @@ time[data-ts] { cursor: help; }
       svg("rect", { "class": "hs-future", x: fx, y: m.t, width: m.l + pw - fx, height: ph }, root);
 
       weekendBands(root, t0, t1, X, m.t, ph);
+      allRefusedBands(root, pool, t0, t1, X, m.t, ph, m.l, m.l + pw);
       if (stacked) stackGrid(root, m, pw, Y, maxY); else yGrid(root, m, pw, Y);
       timeAxis(root, t0, t1, X, pw, m.t, Y(0), Y(0) + 20, true);
       svg("line", { x1: m.l, x2: m.l + pw, y1: Y(0) + 0.5, y2: Y(0) + 0.5, stroke: "var(--axis)", "stroke-width": 1 }, root);
@@ -6163,7 +6190,7 @@ time[data-ts] { cursor: help; }
         });
         lockTape(gt, tapeParts, X, Y);
         if (sd.cur !== null && now >= t0 && now <= t1) {
-          presentMark(gm, X(now), Y(sd.cur), sd.col, false);
+          presentMark(gm, X(now), Y(sd.cur), sd.col, sd.live);
         }
       });
       if (view.weekly) drawRanges(root, X, Y, t0, t1, m, pw, st);
@@ -6178,16 +6205,12 @@ time[data-ts] { cursor: help; }
           { "font-size": 9.5, "letter-spacing": ".14em", "font-weight": 600, "text-anchor": nearEdge ? "end" : "start" });
       }
 
-      /* Under the axis, each stretch in which no seat could take the view's
-         requests, on the plot and on the strip. */
-      poolTape(root, pool, t0, t1, X, Y(0) + 6, m.l, m.l + pw);
-      poolTape(root, pool, tMin, tMax, XN, NAV_TOP + NAV_H + 4, m.l, m.l + pw);
-
       /* The strip: every recorded line over the whole history, with the
          range the plot shows as a window over it. */
       svg("rect", { "class": "hs-nav-bg", x: m.l, y: NAV_TOP, width: pw, height: NAV_H, rx: 4 }, root);
       var gNav = svg("g", { "clip-path": "url(#hist-nclip)" }, root);
       weekendBands(gNav, tMin, tMax, XN, NAV_TOP, NAV_H);
+      allRefusedBands(gNav, pool, tMin, tMax, XN, NAV_TOP, NAV_H, m.l, m.l + pw);
       data.forEach(function (sd) {
         if (!sd.wins.length) return;
         var tail = sd.cur !== null ? tailTo(XN(now), YN(sd.cur)) : "";
@@ -6267,12 +6290,11 @@ time[data-ts] { cursor: help; }
       rs.appendChild(h("span", "gl", "\u21bb"));
       rs.appendChild(document.createTextNode(" reset"));
     }
-    if (anyEst && !stacked) legendRow(legend, SW_EST, EST_KEY);
-    if (anyGap && !stacked) legendRow(legend, SW_GAP, UNRECORDED_KEY);
+    if (!stacked) markLegend(legend, anyMark, anyLive, anyEst, anyGap);
     if (stacked ? data.some(function (sd) { return refusedSpans(sd.a, view, tMin, tMax, now).length; }) : anyLock) {
-      legendRow(legend, stacked ? SW_SHADE : SW_LOCK, LOCK_KEY);
+      legendRow(legend, SW_LOCK, LOCK_KEY);
     }
-    if (pool.length) legendRow(legend, SW_LOCK, POOL_KEY);
+    if (pool.length) legendRow(legend, SW_ALL_REFUSED, ALL_REFUSED_KEY);
     if (view.weekly) legendRow(legend, SW_BRACKET, "use per day or week" + (stacked ? "; +N% is a seat's share" : ""));
 
     bindHistPointer(host);
