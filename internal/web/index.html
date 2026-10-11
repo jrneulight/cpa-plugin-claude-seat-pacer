@@ -469,6 +469,10 @@ td .seat-mark { max-width: 22ch; }
     var(--held) !important;
 }
 .legend .gl { font: 600 11px/1 var(--mono); flex: none; }
+.legend .sw-reset {
+  box-sizing: border-box; width: 13px; height: 13px; margin: -.5px .5px; border: 1.5px solid var(--ink-2); border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center; font: 700 8px/1 var(--sans); color: var(--ink-2);
+}
 /* The timeline's legend sits inside its card under the chart, 8px below it,
    in short lists rather than one long one, inset to the line the other
    cards' content starts on. The chart alone scrolls sideways, so the lists
@@ -643,10 +647,12 @@ svg.pace g.reset-mark:focus-visible circle { stroke: var(--focus); stroke-width:
   :is(#pace-legend, #hist-legend) { min-height: 27px; align-content: flex-start; }
 }
 @media (max-width: 620px) {
-  /* The views' lines and legends take two and three rows here, so each
-     keeps that many whichever view shows. */
+  /* The views' lines and legends take two and three or four rows here, so
+     each keeps that many whichever view shows. */
   .rank-formula { min-height: calc(2 * 1.45em); }
-  :is(#pace-legend, #hist-legend) { min-height: 44px; align-content: flex-start; }
+  #pace-legend { min-height: 44px; align-content: flex-start; }
+  /* Over time's weekly legend takes four rows here. */
+  #hist-legend { min-height: 58px; align-content: flex-start; }
 }
 /* The sum a listed cost is, from the running weights, in one line a reader
    can check a figure against the marks' labels by. It runs the width of the
@@ -3687,9 +3693,9 @@ time[data-ts] { cursor: help; }
     "color-mix(in srgb, var(--critical) 14%, transparent) 2px)";
   var ALL_REFUSED_KEY = "every seat refused";
   /* A present mark, and one the provider is refusing now. */
-  var SW_MARK = "box-sizing:border-box;width:13px;height:13px;margin:0 .5px;border-radius:50%;" +
+  var SW_MARK = "box-sizing:border-box;width:13px;height:13px;margin:-.5px .5px;border-radius:50%;" +
     "border:1.5px solid var(--ink-2);background:radial-gradient(circle, var(--ink-2) 0 2.5px, transparent 3px)";
-  var SW_MARK_LIVE = "box-sizing:border-box;width:13px;height:13px;margin:0 .5px;border-radius:50%;border:2px solid var(--critical);" +
+  var SW_MARK_LIVE = "box-sizing:border-box;width:13px;height:13px;margin:-.5px .5px;border-radius:50%;border:2px solid var(--critical);" +
     "background:linear-gradient(45deg, transparent 42%, var(--ink-2) 42% 58%, transparent 58%) center/6px 6px no-repeat," +
     "linear-gradient(-45deg, transparent 42%, var(--ink-2) 42% 58%, transparent 58%) center/6px 6px no-repeat";
   var SW_SIGN = "height:0;border-top:2px dotted var(--ink-2)";
@@ -3955,12 +3961,14 @@ time[data-ts] { cursor: help; }
     });
   }
 
-  /* A pointer target along each pool-wide refusal's edge, 8px tall from y,
-     over everything the plot draws, with its stretch in the tooltip. */
+  /* A pointer target along each pool-wide refusal's edge, 8px tall from y
+     and at least 10px wide, over everything the plot draws, with its
+     stretch in the tooltip. */
   function allRefusedHits(parent, spans, t0, t1, xOf, y, left, right) {
     allRefusedRuns(spans, t0, t1, xOf, left, right).forEach(function (r) {
       var sp = r.sp;
-      svg("rect", { "class": "hs-all-refused-hit", x: r.x0, y: y, width: r.w, height: 8, fill: "transparent",
+      var hw = Math.max(10, r.w);
+      svg("rect", { "class": "hs-all-refused-hit", x: r.x0 + (r.w - hw) / 2, y: y, width: hw, height: 8, fill: "transparent",
         "data-tip": ALL_REFUSED_KEY + "\n" + absTime(new Date(sp[0])) + " – " + absTime(new Date(sp[1])) +
           " (" + durText(Math.round((sp[1] - sp[0]) / 1000)) + ")" }, parent);
     });
@@ -4364,13 +4372,13 @@ time[data-ts] { cursor: help; }
      inside a ring PT_RING further out, with the card's colour between them.
      The gap parts the mark from any line under it, its own seat's included.
      While the provider refuses the seat the ring is in the critical tone and
-     a cross in ink takes the dot's place. */
+     a cross in the seat's colour takes the dot's place. */
   function presentMark(g, cx, cy, col, live) {
     svg("circle", { cx: cx, cy: cy, r: PT_R + PT_RING, fill: "var(--surface-1)",
       stroke: live ? "var(--critical)" : col, "stroke-width": live ? 2 : 1.5 }, g);
     if (live) {
       svg("path", { d: "M" + (cx - 3) + " " + (cy - 3) + "l6 6M" + (cx + 3) + " " + (cy - 3) + "l-6 6",
-        stroke: "var(--ink-1)", "stroke-width": 1.5, "stroke-linecap": "round" }, g);
+        stroke: col, "stroke-width": 1.75, "stroke-linecap": "round" }, g);
     } else svg("circle", { cx: cx, cy: cy, r: PT_R, fill: col }, g);
   }
 
@@ -4678,11 +4686,11 @@ time[data-ts] { cursor: help; }
     if (anyUnrec) legendRow(leg, SW_GAP, UNRECORDED_KEY);
   }
 
-  /* A legend row for the reset glyph the plots draw. */
+  /* A legend row for the reset mark the plots draw: the glyph in a ring. */
   function resetRow(leg) {
     var li = leg.appendChild(h("li", "", ""));
-    li.appendChild(h("span", "gl", "\u21bb"));
-    li.appendChild(document.createTextNode(" reset"));
+    li.appendChild(h("span", "sw sw-reset", "\u21bb"));
+    li.appendChild(document.createTextNode("reset"));
   }
 
   /* Current window's legend, under its plot: what markLegend keys, then the
@@ -5932,11 +5940,11 @@ time[data-ts] { cursor: help; }
        seat's band lifts that seat. */
     function drawStack(root, layer, X, Y, t0, t1, m, pw, ph) {
       /* Each seat's refusals, merged, bottom first, each from where it
-         settles on the seat's line and at least one stripe's period wide
+         settles on the seat's line and at least two stripe periods wide
          about its middle, so a brief one reads as a stroke rather than a
          seam; their ends are breakpoints of the stack so the stripes cover
          exactly that stretch. */
-      var minT = HS_HATCH_P * (t1 - t0) / pw;
+      var minT = 2 * HS_HATCH_P * (t1 - t0) / pw;
       var refused = order.map(function (i) {
         var wins = data[i].wins;
         return refusedSpans(data[i].a, view, t0, t1, now).map(function (sp) {
@@ -6278,16 +6286,25 @@ time[data-ts] { cursor: help; }
           if (c.at > t1 || cyclePx < 16) return;
           var ex = X(c.at), ey = Y(c.u), left = Math.max(0, 1 - c.u);
           var box = { x0: ex - 8, x1: ex + 8, y0: ey - 8, y1: ey + 8 };
-          if (!rings.some(function (o) { return boxesMeet(box, o); })) {
-            rings.push(box);
+          var met = rings.filter(function (o) { return boxesMeet(box, o.box); })[0];
+          if (met) {
+            /* Its reset joins the tooltip of the mark it would meet. */
+            met.spec.lines.push({ b: seatLabel(sd.a), t: pct(c.u, 0) + " \u2192 0% \u00b7 " + absTime(new Date(c.at)) });
+            setTip(met.el, met.spec);
+          } else {
             var rk = resetMark(gr, ex, ey, sd.col);
-            setTip(rk, { seat: seatLabel(sd.a), col: sd.col, win: view.label, type: "reset", label: "reset",
-              when: absTime(new Date(c.at)), dur: relText(new Date(c.at), now), big: [pct(c.u, 0), "0%"], delta: "", lines: [] });
+            var spec = { seat: seatLabel(sd.a), col: sd.col, win: view.label, type: "reset", label: "reset",
+              when: absTime(new Date(c.at)), dur: relText(new Date(c.at), now), big: [pct(c.u, 0), "0%"], delta: "", lines: [] };
+            setTip(rk, spec);
             rk.setAttribute("data-tip-visual", "true");
+            rings.push({ box: box, el: rk, spec: spec });
           }
           /* A cycle that spent its whole budget left nothing to name. */
           if (view.weekly && !c.est && left >= 0.005 && cyclePx >= 60) {
-            labels.push({ el: svgText(gm, clamp(ex, m.l + 34, m.l + pw - 34), ey - 11, pct(left, 0) + " unused", "gap-label t-mono",
+            /* Above the mark, or under it where the 100% line and its
+               sleeves would cross the figure. */
+            var ly = ey - 18 <= Y(1) + 4 && ey - 9 >= Y(1) - 4 ? ey + 17 : ey - 11;
+            labels.push({ el: svgText(gm, clamp(ex, m.l + 34, m.l + pw - 34), ly, pct(left, 0) + " unused", "gap-label t-mono",
               { "font-size": 9.5, "text-anchor": "middle" }) });
           }
         });
@@ -6423,10 +6440,7 @@ time[data-ts] { cursor: help; }
       [reference ? SW_CURVE : SW_TARGET, reference ? CURVE_KEY : "target"],
       [SW_WEEKEND, "weekend"]
     ]).forEach(function (it) { legendRow(legend, it[0], it[1]); });
-    /* A reset is the glyph the plot draws. */
-    var rs = legend.appendChild(h("li", "", ""));
-    rs.appendChild(h("span", "gl", "\u21bb"));
-    rs.appendChild(document.createTextNode(" reset"));
+    resetRow(legend);
     if (!stacked) markLegend(legend, anyMark, anyLive, anyEst, anyGap);
     if (stacked ? data.some(function (sd) { return refusedSpans(sd.a, view, tMin, tMax, now).length; }) : anyLock) {
       legendRow(legend, stacked ? SW_STACK_LOCK : SW_LOCK, LOCK_KEY);
