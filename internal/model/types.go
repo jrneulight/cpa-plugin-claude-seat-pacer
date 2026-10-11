@@ -350,6 +350,10 @@ type Score struct {
 	Windows  []WindowScore `json:"windows"`
 	Eligible bool          `json:"eligible"`
 	Reason   string        `json:"reason,omitempty"`
+	// Expiring marks an eligible credential the expiry-window rule ranks
+	// ahead of the cost order (PaceConfig.Expiry). It is never set while the
+	// rule is off, or on an ineligible credential.
+	Expiring bool `json:"expiring,omitempty"`
 }
 
 // Decision kinds.
