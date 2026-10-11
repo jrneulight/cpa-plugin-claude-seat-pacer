@@ -43,9 +43,9 @@ new conversation. A seat held off ranks below them.
   mark each reset with ↻. On a weekly window, brackets over the plot give the
   pool's use per local day, or per week from Monday once days are too narrow
   to label, and each bracket's tooltip sets that against what the pool renews
-  and splits it by seat. If every seat is on the same
-  plan, these figures show whether the pool has enough seats, though use
-  understates demand while every seat is refused.
+  and splits it by seat. If every seat is on the same plan, these figures
+  show whether the pool has enough seats, though use understates demand
+  while every seat is refused.
 
   <img src="over-time-stacked.png" width="900" alt="The Over time chart in its Stacked form over two weeks of 7d Standard: three seats' use piled into the pool's total under the 300% line of what the pool holds, a bracket over each day with the pool's use, each seat's share inside its band, reset marks where a seat's band falls, and past now each band held until its seat's reset; beside it, what the pool has used of what it holds and what each reset brings back.">
 

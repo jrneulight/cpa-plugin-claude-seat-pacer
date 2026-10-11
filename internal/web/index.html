@@ -8,6 +8,8 @@
 <style>
 /* ---------------------------------------------------------------- tokens */
 :root {
+  /* A held window's fill under its hatch: the critical tone thinned into the card. */
+  --held: color-mix(in srgb, var(--critical) 18%, var(--surface-1));
   color-scheme: light;
   --plane:        #f9f9f7;
   --surface-1:    #fcfcfb;
@@ -464,7 +466,7 @@ td .seat-mark { max-width: 22ch; }
 .sw[data-pattern="hatch"] {
   box-sizing: border-box; border: 1px solid var(--critical);
   background: repeating-linear-gradient(135deg, var(--critical) 0 1.5px, transparent 1.5px 4.5px),
-    color-mix(in srgb, var(--critical) 18%, var(--surface-1)) !important;
+    var(--held) !important;
 }
 .legend .gl { font: 600 11px/1 var(--mono); flex: none; }
 /* The timeline's legend sits inside its card under the chart, 8px below it,
@@ -577,13 +579,10 @@ svg.pace path.hist-est { fill: none; stroke-width: 1.4; stroke-linejoin: round; 
    after it where no reading between them was recorded: a straight, sparse
    dotted line, because only its two ends are known. */
 svg.pace path.hist-gap { fill: none; stroke-width: 1.4; stroke-linecap: round; opacity: .55; stroke-dasharray: 1 4; }
-/* A span in which the provider refused the seat: a sleeve in the seat's
-   colour around its line, hatched, with the line drawn through it. */
-svg.pace rect.lock-sleeve { pointer-events: none; }
 /* A line's sections take the pointer, the drawn strokes under them never do;
    the section under the pointer shows in the seat's colour. A square cap
    closes the corners of a step and gives an instant a target of its own. */
-svg.pace path.hist { pointer-events: none; }
+svg.pace path.hist, svg.pace rect.lock-sleeve { pointer-events: none; }
 svg.pace path.span-hit { fill: none; stroke-width: 9; stroke-opacity: 0; stroke-linecap: square; pointer-events: stroke; cursor: default; }
 svg.pace path.span-hit:hover { stroke-opacity: .22; }
 /* A refusal's section takes the pointer over the whole of its sleeve and
@@ -826,7 +825,8 @@ svg.hist-tl rect.hs-future { fill: var(--emph); }
 svg.hist-tl path.hs-stack { stroke: none; opacity: .45; }
 svg.hist-tl path.hs-stack.hs-proj { opacity: .16; }
 svg.hist-tl path.hs-refused { stroke: none; opacity: .7; }
-svg.hist-tl rect.hs-all-refused { fill: var(--critical); opacity: .1; }
+svg.hist-tl rect.hs-all-refused { fill: var(--critical); opacity: .14; }
+svg.hist-tl rect.hs-all-refused, svg.hist-tl rect.hs-all-refused-edge { pointer-events: none; }
 svg.hist-tl rect.hs-all-refused-edge { fill: var(--critical); opacity: .9; }
 svg.hist-tl path.hs-edge { fill: none; stroke-width: 1.5; stroke-linejoin: round; pointer-events: none; }
 svg.hist-tl path.hs-edge.hs-proj { stroke-dasharray: 4 3; opacity: .55; }
@@ -3546,12 +3546,12 @@ time[data-ts] { cursor: help; }
   /* Draws a window's samples, as drawnSamples leaves them, as a line under
      parent, one run per cycle. A run's last sample is the last reading at its
      level, since an idle run folds into its end, so the clearing after it
-     falls to zero there, dotted, under a reset mark; the climb
-     from zero to the next run's first reading is solid where the two are
-     close and drawn as not recorded where they are not. Returns the count of
-     estimated samples, the unrecorded spans, each a [from, to] pair of
-     instants, and the resets, each the dot's group with the instant and the
-     level the window fell from. */
+     falls to zero there, dotted, under a reset mark; the climb from zero to
+     the next run's first reading is solid where the two are close and drawn
+     as not recorded where they are not. Returns the count of estimated
+     samples, the unrecorded spans, each a [from, to] pair of instants, and
+     the resets, each the mark's group with the instant and the level the
+     window fell from. */
   function historyLine(parent, samples, xOf, Y, col, tail) {
     var runs = [];
     samples.forEach(function (s) {
@@ -3681,9 +3681,10 @@ time[data-ts] { cursor: help; }
     "background:repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink-2) 75%, transparent) 0 1.1px, transparent 1.1px 3px)";
   var LOCK_KEY = "refused";
   /* Stacked, a refused seat's band, struck through in the card's colour. */
-  var SW_STACK_LOCK = "height:10px;background:repeating-linear-gradient(133deg, var(--ink-3) 0 2.8px, var(--surface-1) 2.8px 4.4px)";
+  var SW_STACK_LOCK = "height:10px;background:repeating-linear-gradient(135deg, var(--surface-1) 0 1.6px, var(--ink-3) 1.6px 4.4px)";
+  var HS_HATCH_P = 4.4;
   var SW_ALL_REFUSED = "height:10px;background:linear-gradient(var(--critical) 0 2px, " +
-    "color-mix(in srgb, var(--critical) 25%, transparent) 2px)";
+    "color-mix(in srgb, var(--critical) 14%, transparent) 2px)";
   var ALL_REFUSED_KEY = "every seat refused";
   /* A present mark, and one the provider is refusing now. */
   var SW_MARK = "box-sizing:border-box;width:13px;height:13px;margin:0 .5px;border-radius:50%;" +
@@ -3826,8 +3827,8 @@ time[data-ts] { cursor: help; }
   }
 
   /* The instant a refusal from t0 to t1 shows from on a line of samples,
-     with uNow the present reading at tNow: past the first reading after t0
-     where that reading rose. A refused seat takes no work, so that rise is
+     with uNow the present reading at tNow: the first reading after t0 where
+     that reading rose, else t0. A refused seat takes no work, so that rise is
      use from before the refusal that the reading caught late. */
   function settledStart(t0, t1, samples, tNow, uNow) {
     for (var i = 1; i < samples.length; i++) {
@@ -3842,7 +3843,6 @@ time[data-ts] { cursor: help; }
   /* Moves each span's drawn start to where it settles on the line. */
   function settleSpans(spans, samples, tNow, uNow) {
     if (samples.length) spans.forEach(function (sp) { sp.t0 = settledStart(sp.t0, sp.t1, samples, tNow, uNow); });
-    return spans;
   }
 
   /* The stretches from start to end, up to now, in which the provider
@@ -3914,38 +3914,55 @@ time[data-ts] { cursor: help; }
      k: a tint over the whole of it, covering the track's edge as any fill
      does, and stripes held half a pixel inside one border on the outline. */
   function heldFill(parent, h, shape) {
-    svg("path", { d: shape(0), fill: "color-mix(in srgb, var(--critical) 18%, var(--surface-1))" }, parent);
+    svg("path", { d: shape(0), fill: "var(--held)" }, parent);
     svg("path", { d: shape(1.5), fill: "var(--critical)", opacity: .8, mask: hatchFor(parent, h) }, parent);
     svg("path", { d: shape(0.5), fill: "none", stroke: "var(--critical)", "stroke-width": 1, opacity: .9 }, parent);
   }
 
   var SLEEVE_W = 6;
   /* One sleeve from x0 to x1 around a line at y: its round ends centred on
-     the stretch's ends, so a stretch with no length is a circle; the card's
-     colour inside under the seat's hatch, in a border of its colour. Its
-     inside joins clip, through which the seat's line is drawn, and the whole
-     of it joins hole, where the line itself is left out. */
+     the stretch's ends, so a stretch with no length is a circle; the seat's
+     hatch inside a border of its colour, over whatever the plot draws under
+     it. Its inside joins clip, through which the seat's line is drawn, and
+     the whole of it joins hole, where the line itself is left out. */
   function sleeve(parent, x0, x1, y, col, clip, hole) {
     var r = SLEEVE_W / 2, box = { x: x0 - r, y: y - r, width: x1 - x0 + SLEEVE_W, height: SLEEVE_W, rx: r };
-    svg("rect", Object.assign({ "class": "lock-sleeve", fill: "var(--surface-1)" }, box), parent);
     svg("rect", Object.assign({ "class": "lock-sleeve", fill: col, opacity: .55, mask: hatchFor(parent, SLEEVE_W) }, box), parent);
     svg("rect", Object.assign({ "class": "lock-sleeve", fill: "none", stroke: col, "stroke-width": 1.25 }, box), parent);
     svg("rect", { x: box.x + 1, y: box.y + 1, width: box.width - 2, height: box.height - 2, rx: r - 1 }, clip);
-    if (hole) svg("rect", Object.assign({ fill: "#000" }, box), hole);
+    svg("rect", Object.assign({ fill: "#000" }, box), hole);
   }
 
-  /* Shades each pool-wide refusal between t0 and t1 from y down hgt, cut to
-     the plot's x0 to x1, under a solid edge at its top at least 3px wide so a
-     brief one still shows, with its stretch in the tooltip. */
-  function allRefusedBands(parent, spans, t0, t1, xOf, y, hgt, x0, x1) {
+  /* Each pool-wide refusal between t0 and t1 as [x0, x1] on screen, cut to
+     the plot's left to right and at least 3px wide, so a brief one shows. */
+  function allRefusedRuns(spans, t0, t1, xOf, left, right) {
+    var out = [];
     spans.forEach(function (sp) {
       if (sp[1] <= t0 || sp[0] >= t1) return;
-      var a = clamp(xOf(Math.max(sp[0], t0)), x0, x1), b = clamp(xOf(Math.min(sp[1], t1)), x0, x1);
-      var w = Math.max(3, b - a), g = svg("g", {}, parent);
-      g.setAttribute("data-tip", ALL_REFUSED_KEY + "\n" + absTime(new Date(sp[0])) + " – " + absTime(new Date(sp[1])) +
-        " (" + durText(Math.round((sp[1] - sp[0]) / 1000)) + ")");
-      svg("rect", { "class": "hs-all-refused", x: a, y: y, width: Math.max(1, b - a), height: hgt }, g);
-      svg("rect", { "class": "hs-all-refused-edge", x: (a + b - w) / 2, y: y, width: w, height: 2 }, g);
+      var a = clamp(xOf(Math.max(sp[0], t0)), left, right), b = clamp(xOf(Math.min(sp[1], t1)), left, right);
+      var w = Math.max(3, b - a), c = (a + b) / 2;
+      out.push({ x0: clamp(c - w / 2, left, right - w), w: w, sp: sp });
+    });
+    return out;
+  }
+
+  /* Shades each pool-wide refusal from y down hgt under a solid 2px edge at
+     its top; the shade takes no pointer. */
+  function allRefusedBands(parent, spans, t0, t1, xOf, y, hgt, left, right) {
+    allRefusedRuns(spans, t0, t1, xOf, left, right).forEach(function (r) {
+      svg("rect", { "class": "hs-all-refused", x: r.x0, y: y, width: r.w, height: hgt }, parent);
+      svg("rect", { "class": "hs-all-refused-edge", x: r.x0, y: y, width: r.w, height: 2 }, parent);
+    });
+  }
+
+  /* A pointer target along each pool-wide refusal's edge, 8px tall from y,
+     over everything the plot draws, with its stretch in the tooltip. */
+  function allRefusedHits(parent, spans, t0, t1, xOf, y, left, right) {
+    allRefusedRuns(spans, t0, t1, xOf, left, right).forEach(function (r) {
+      var sp = r.sp;
+      svg("rect", { "class": "hs-all-refused-hit", x: r.x0, y: y, width: r.w, height: 8, fill: "transparent",
+        "data-tip": ALL_REFUSED_KEY + "\n" + absTime(new Date(sp[0])) + " – " + absTime(new Date(sp[1])) +
+          " (" + durText(Math.round((sp[1] - sp[0]) / 1000)) + ")" }, parent);
     });
   }
 
@@ -3976,12 +3993,10 @@ time[data-ts] { cursor: help; }
     });
     if (!bands.length) return false;
     var root = parent.ownerSVGElement || parent, defs = root.querySelector("defs") || svg("defs", {}, root);
-    var clip = svg("clipPath", { id: "lock-clip-" + (++maskN) }, defs), hole = null;
-    if (lineG) {
-      hole = svg("mask", { id: "lock-hole-" + (++maskN), maskUnits: "userSpaceOnUse", x: -5000, y: -5000, width: 20000, height: 20000 }, defs);
-      svg("rect", { x: -5000, y: -5000, width: 20000, height: 20000, fill: "#fff" }, hole);
-      lineG.setAttribute("mask", "url(#" + hole.id + ")");
-    }
+    var clip = svg("clipPath", { id: "lock-clip-" + (++maskN) }, defs);
+    var hole = svg("mask", { id: "lock-hole-" + (++maskN), maskUnits: "userSpaceOnUse", x: -5000, y: -5000, width: 20000, height: 20000 }, defs);
+    svg("rect", { x: -5000, y: -5000, width: 20000, height: 20000, fill: "#fff" }, hole);
+    lineG.setAttribute("mask", "url(#" + hole.id + ")");
     bands.forEach(function (r) { sleeve(parent, r[0], r[1], r[2], col, clip, hole); });
     parts.forEach(function (part) {
       var d = part[1].map(function (q, i) { return (i ? "L" : "M") + xOf(q.t).toFixed(2) + " " + Y(q.u).toFixed(2); }).join("");
@@ -4299,15 +4314,15 @@ time[data-ts] { cursor: help; }
       }
       out.push({ el: el, sec: sec });
     });
+    /* A refusal's section is set last, so it takes the pointer from the
+       sections beside it; it comes after them in keyboard order too. */
     out.forEach(function (o) { if (o.sec.type === "limit") parent.appendChild(o.el); });
-    /* A reset's dot sits over the sections, so it takes the pointer. */
-    [].forEach.call(parent.querySelectorAll("g.reset-mark"), function (m) { parent.appendChild(m); });
     return out;
   }
 
-  /* Each reset dot's tooltip, and the stop it makes, keyed by key, the
-     line's own. The dots move into the seat's group in layer, the chart's
-     top one, over every line and sleeve. */
+  /* Each reset mark's tooltip, and the stop it makes, keyed by key, the
+     line's own. The marks move into the seat's group in layer, a layer over
+     every line and sleeve and under every present mark. */
   function resetTips(resets, head, key, layer, id) {
     var above = resets.length ? seatLayer(layer, id) : null;
     resets.forEach(function (r) {
@@ -4359,9 +4374,10 @@ time[data-ts] { cursor: help; }
     } else svg("circle", { cx: cx, cy: cy, r: PT_R, fill: col }, g);
   }
 
-  /* Moves a refused seat's mark under every other in its layer, so a seat
-     still taking work reads over one held at the same level. */
-  function sinkMark(g) { g.parentNode.insertBefore(g, g.parentNode.firstChild); }
+  /* Moves a refused seat's mark into low, the layer under every other mark,
+     so a seat still taking work reads over one held at the same level.
+     Refused seats come first in keyboard order, in the order drawn. */
+  function sinkMark(g, low) { low.appendChild(g); }
 
   /* The stacked form's gridlines: a labelled line every half window up to
      four and a half seats' worth, every window past that, and a faint one
@@ -4395,6 +4411,7 @@ time[data-ts] { cursor: help; }
 
   function renderPace(st, seats, ranks) {
     var host = $("pace-curve");
+    paceLegend();
     host.textContent = "";
     var fams = scopedFamilies(st);
     /* A cap has a view only where the cost weighs it: a weight of zero
@@ -4486,15 +4503,18 @@ time[data-ts] { cursor: help; }
        its weight in the cost; the weekly window counts whole. The group's
        role="img" keeps the label out of the accessibility tree; the gap is
        in its name. */
-    var labels = [], anyEst = false, anyUnrec = false, anyLock = false, anyLive = false;
-    /* Three layers, because SVG paints in document order and a seat drawn
-       later would otherwise run its recorded line across an earlier seat's
-       mark and label. Every refusal's sleeve goes in the lowest layer, every
-       line over them, so a seat still taking work runs over one refused, and
-       every mark, label and hit area in the top one, so no seat can hide
-       another's reading. */
+    var labels = [], anyEst = false, anyUnrec = false, anyLock = false, anyLive = false, anyReset = false;
+    /* Layers, because SVG paints in document order and a seat drawn later
+       would otherwise run its recorded line across an earlier seat's mark
+       and label. Every refusal's sleeve goes in the lowest layer, every line
+       over them, so a seat still taking work runs over one refused, then
+       every reset mark, every refused seat's mark, and every other mark,
+       label and hit area in the top one, so no seat can hide another's
+       reading. */
     var gLock = svg("g", {}, root);
     var gLines = svg("g", {}, root);
+    var gResets = svg("g", {}, root);
+    var gLow = svg("g", {}, root);
     var gPts = svg("g", {}, root);
     dimOnHover(root);
     /* weighted marks a family cap's mark. A limit on any window bearing on
@@ -4533,7 +4553,8 @@ time[data-ts] { cursor: help; }
           var drawn = historyLine(gl, line, xOf, Y, col, tailTo(cx, cy));
           anyEst = anyEst || drawn.est > 0;
           anyUnrec = anyUnrec || drawn.unrecorded.length > 0;
-          resetTips(drawn.resets, tipHead, key, gPts, a.auth_id);
+          resetTips(drawn.resets, tipHead, key, gResets, a.auth_id);
+          anyReset = anyReset || drawn.resets.length > 0;
           sectionHits(gl, lineSections(line, start, tNow, ws.utilization, locks.drawn, PACE_IDLE_MS), v, xOf, Y, col,
             function (sec) { return sectionTip(tipHead, sec, line, tNow, ws.utilization, now); },
             function (sec) { return !!(sec.spans && sec.spans.length); }, key);
@@ -4558,7 +4579,7 @@ time[data-ts] { cursor: help; }
       setTip(g, tip);
       svg("circle", { "class": "hit", cx: cx, cy: cy, r: 13, fill: "transparent" }, g);
       presentMark(g, cx, cy, col, locks.live.length > 0);
-      if (locks.live.length) { anyLive = true; sinkMark(g); }
+      if (locks.live.length) { anyLive = true; sinkMark(g, gLow); }
     }
 
     var plotted = 0;
@@ -4580,7 +4601,7 @@ time[data-ts] { cursor: help; }
         "t-muted", { "font-size": 11.5, "text-anchor": "middle" });
     }
 
-    lineLegend($("pace-legend"), plotted > 0, anyLive, anyEst, anyUnrec, anyLock);
+    lineLegend(host, plotted > 0, anyLive, anyEst, anyUnrec, anyLock, anyReset);
     renderRank(st, seats, ranks, view);
     renderPaceNote(st);
   }
@@ -4647,7 +4668,7 @@ time[data-ts] { cursor: help; }
     });
   }
 
-  /* The present mark, in its refused form where one is drawn, then the
+  /* The present mark, and its refused form where one is drawn, then the
      line styles a recorded line can take past the plain one, each only
      where the chart draws it. Both line charts key these alike. */
   function markLegend(leg, anyMark, anyLive, anyEst, anyUnrec) {
@@ -4657,14 +4678,29 @@ time[data-ts] { cursor: help; }
     if (anyUnrec) legendRow(leg, SW_GAP, UNRECORDED_KEY);
   }
 
-  /* Current window's legend: what markLegend keys, then the sleeve. The
-     curve names itself on the plot, and a mark's gap shows on pointing at
-     it, which the note says. */
-  function lineLegend(leg, anyMark, anyLive, anyEst, anyUnrec, anyLock) {
+  /* A legend row for the reset glyph the plots draw. */
+  function resetRow(leg) {
+    var li = leg.appendChild(h("li", "", ""));
+    li.appendChild(h("span", "gl", "\u21bb"));
+    li.appendChild(document.createTextNode(" reset"));
+  }
+
+  /* Current window's legend, under its plot: what markLegend keys, then the
+     sleeve and the reset mark where drawn. The curve names itself on the
+     plot, and a mark's gap shows on pointing at it, which the note says. */
+  function lineLegend(host, anyMark, anyLive, anyEst, anyUnrec, anyLock, anyReset) {
+    var leg = paceLegend();
     leg.textContent = "";
     markLegend(leg, anyMark, anyLive, anyEst, anyUnrec);
     if (anyLock) legendRow(leg, SW_LOCK, LOCK_KEY);
+    if (anyReset) resetRow(leg);
+    host.appendChild(leg);
   }
+  /* The legend list, which each render moves into the plot's column before
+     clearing that column, so it stays with its plot when the list drops
+     under it. */
+  var paceLegendEl = null;
+  function paceLegend() { return paceLegendEl || (paceLegendEl = $("pace-legend")); }
 
   /* What both charts' notes say about a line's stretches, given the pause,
      in words, that ends a usage stretch. */
@@ -4728,7 +4764,7 @@ time[data-ts] { cursor: help; }
 
     var sec = def(dl, "stretches, refusals and resets");
     sec.appendChild(document.createTextNode(sectionsText(PACE_IDLE_MS / 3600000 + " hours") +
-      " Reset dots and refused stretches take keyboard focus."));
+      " Reset marks and refused stretches take keyboard focus."));
 
     var q = def(dl, "cost and ranking");
     /* The sum the formula line states, in words: one clause per term the
@@ -4841,6 +4877,7 @@ time[data-ts] { cursor: help; }
 
   function renderSession(st, seats) {
     var host = $("session-chart");
+    paceLegend();
     host.textContent = "";
     var paceCfg = (st.config && st.config.pace) || {};
     /* The view's line carries what this window's headroom is worth in the
@@ -4918,12 +4955,15 @@ time[data-ts] { cursor: help; }
       counts ? curveLabelText(paceCfg, "target", function (e) { return (e * SESSION_HOURS).toFixed(1) + " h"; }) : "reference curve, not paced",
       "t-muted curve-label", { "font-size": 10.5, "text-anchor": "end", "font-weight": 600 });
 
-    var plotted = 0, labels = [], anyEst = false, anyUnrec = false, anyLock = false, anyLive = false;
-    /* Three layers, as on the 7-day views: every refusal's sleeve below
-       every line, and both below every mark and label, so a seat drawn later
-       cannot run its line across an earlier seat's reading. */
+    var plotted = 0, labels = [], anyEst = false, anyUnrec = false, anyLock = false, anyLive = false, anyReset = false;
+    /* Layers, as on the 7-day views: every refusal's sleeve below every
+       line, then every reset mark, every refused seat's mark, and every
+       other mark and label on top, so a seat drawn later cannot run its line
+       across an earlier seat's reading. */
     var gLock = svg("g", {}, root);
     var gLines = svg("g", {}, root);
+    var gResets = svg("g", {}, root);
+    var gLow = svg("g", {}, root);
     var gMarks = svg("g", {}, root);
     dimOnHover(root);
     series.forEach(function (s) {
@@ -4961,7 +5001,8 @@ time[data-ts] { cursor: help; }
         estCur = drawnCur.est;
         anyEst = anyEst || estCur > 0;
         anyUnrec = anyUnrec || drawnCur.unrecorded.length > 0;
-        resetTips(drawnCur.resets, sHead, key, gMarks, a.auth_id);
+        resetTips(drawnCur.resets, sHead, key, gResets, a.auth_id);
+        anyReset = anyReset || drawnCur.resets.length > 0;
         /* One pointer target per section of the line; a usage section's
            tooltip also lists the conversations the routing log shows on the
            seat in it. */
@@ -4987,7 +5028,7 @@ time[data-ts] { cursor: help; }
       }
       svg("circle", { "class": "hit", cx: cx, cy: cy, r: 13, fill: "transparent" }, hg);
       presentMark(hg, cx, cy, col, locks5.live.length > 0);
-      if (locks5.live.length) { anyLive = true; sinkMark(hg); }
+      if (locks5.live.length) { anyLive = true; sinkMark(hg, gLow); }
     });
 
     settleLabels(labels, { x0: m.l, x1: m.l + pw, y0: m.t, y1: m.t + ph }, root);
@@ -4998,7 +5039,7 @@ time[data-ts] { cursor: help; }
         "t-muted", { "font-size": 11.5, "text-anchor": "middle" });
     }
 
-    lineLegend($("pace-legend"), plotted > 0, anyLive, anyEst, anyUnrec, anyLock);
+    lineLegend(host, plotted > 0, anyLive, anyEst, anyUnrec, anyLock, anyReset);
     sessionList($("session-rank"), series.map(function (s) {
       var o = currentOutlook(s.auth, "five_hour", "", paceCfg, now);
       /* A seat whose reading the scorer cannot use, too old or never taken,
@@ -5048,7 +5089,7 @@ time[data-ts] { cursor: help; }
       "is not a number. When a pick went elsewhere for no reason the 7-day views show, look here."));
     var sec = def(dl, "stretches, refusals and resets");
     sec.appendChild(document.createTextNode(sectionsText(SESSION_IDLE_MS / 60000 + " minutes") +
-      " Usage stretches, reset dots and refused stretches take keyboard focus."));
+      " Usage stretches, reset marks and refused stretches take keyboard focus."));
     var q = def(dl, "which conversation used it");
     q.appendChild(document.createTextNode("Use is counted per seat, not per conversation, so no line belongs to " +
       "one conversation. A steep stretch with one conversation on it is that conversation; with several, any of " +
@@ -5819,7 +5860,7 @@ time[data-ts] { cursor: help; }
        estimate is in it; then, on a weekly window, the resets in the range
        and what they left unused, or on the 5-hour one how often it reached
        full; and how long the provider refused it there, on this window
-       or any other that bears on it, as the sleeves draw. */
+       or any other that bears on it, from each refusal's own start. */
     function rangeRow(sd, t0, t1) {
       var used = 0, est = false, hits = 0, resets = 0, lost = 0, lostKnown = true;
       sd.rises.forEach(function (r) {
@@ -5890,14 +5931,22 @@ time[data-ts] { cursor: help; }
        Pointing anywhere in the plot shows the stack at that instant, and a
        seat's band lifts that seat. */
     function drawStack(root, layer, X, Y, t0, t1, m, pw, ph) {
-      /* Each seat's refusals, merged, bottom first; their ends are breakpoints
-         of the stack so the stripes cover exactly its stretch. */
+      /* Each seat's refusals, merged, bottom first, each from where it
+         settles on the seat's line and at least one stripe's period wide
+         about its middle, so a brief one reads as a stroke rather than a
+         seam; their ends are breakpoints of the stack so the stripes cover
+         exactly that stretch. */
+      var minT = HS_HATCH_P * (t1 - t0) / pw;
       var refused = order.map(function (i) {
         var wins = data[i].wins;
         return refusedSpans(data[i].a, view, t0, t1, now).map(function (sp) {
           var w = wins.filter(function (win) { return win.start <= sp[0] && sp[0] < win.end; })[0];
           return w ? [settledStart(sp[0], sp[1], w.samples, w.end, w.endU), sp[1]] : sp;
-        }).filter(function (sp) { return sp[1] > sp[0]; });
+        }).filter(function (sp) { return sp[1] > sp[0]; }).map(function (sp) {
+          if (sp[1] - sp[0] >= minT) return sp;
+          var mid = (sp[0] + sp[1]) / 2;
+          return [Math.max(t0, mid - minT / 2), Math.min(t1, mid + minT / 2)];
+        });
       });
       var ends = [now];
       refused.forEach(function (sps) { sps.forEach(function (sp) { ends.push(sp[0], sp[1]); }); });
@@ -5909,10 +5958,6 @@ time[data-ts] { cursor: help; }
          struck through a band while the provider refused its seat, its own
          colour showing between them, then every band's edge over both. */
       var gFill = svg("g", {}, g), gShade = svg("g", {}, g), gEdge = svg("g", {}, g);
-      var defs = root.querySelector("defs") || svg("defs", {}, root);
-      var hatch = svg("pattern", { id: "hs-hatch", patternUnits: "userSpaceOnUse", width: 4.38, height: 4.38,
-        patternTransform: "rotate(43)" }, defs);
-      svg("rect", { width: 1.6, height: 4.38, fill: "var(--surface-1)" }, hatch);
       order.forEach(function (i, k) {
         var sd = data[i], top = st.tops[k], bot = k ? st.tops[k - 1] : zero;
         var gs = svg("g", { "class": "pt-line", "data-seat": sd.a.auth_id }, gFill);
@@ -5926,7 +5971,8 @@ time[data-ts] { cursor: help; }
         if (!refused[k].length) return;
         var gr = svg("g", { "class": "pt-lock", "data-seat": sd.a.auth_id }, gShade);
         refused[k].forEach(function (sp) {
-          svg("path", { "class": "hs-refused", d: stepArea(st.ts, top, bot, X, Y, sp[0], sp[1]), fill: "url(#hs-hatch)" }, gr);
+          svg("path", { "class": "hs-refused", d: stepArea(st.ts, top, bot, X, Y, sp[0], sp[1]), fill: "var(--surface-1)",
+            mask: hatchMask(gr, HS_HATCH_P, 1.6) }, gr);
         });
       });
       var caps = [t0].concat(heldEdges.filter(function (t) { return t > t0 && t < t1; }).sort(function (x, y) { return x - y; }));
@@ -6204,20 +6250,25 @@ time[data-ts] { cursor: help; }
       svg("line", { x1: m.l, x2: m.l + pw, y1: Y(0) + 0.5, y2: Y(0) + 0.5, stroke: "var(--axis)", "stroke-width": 1 }, root);
       svg("line", { x1: m.l, x2: m.l, y1: m.t, y2: Y(0), stroke: "var(--axis)", "stroke-width": 1 }, root);
 
-      /* Three layers, as on Current window: every refusal's sleeve under
-         every line, and every mark and label over both. */
+      /* Layers, as on Current window: every refusal's sleeve under every
+         line, then every reset mark, every refused seat's present mark, and
+         every other mark and label on top. */
       var gLock = svg("g", { "clip-path": "url(#hist-clip)" }, root);
       var gPlot = svg("g", { "clip-path": "url(#hist-clip)" }, root);
+      var gResets = svg("g", { "clip-path": "url(#hist-clip)" }, root);
+      var gLow = svg("g", { "clip-path": "url(#hist-clip)" }, root);
       var gMarks = svg("g", { "clip-path": "url(#hist-clip)" }, root);
       dimOnHover(root);
-      var inView = function (a, b) { return b >= t0 && a <= t1; }, labels = [];
+      var inView = function (a, b) { return b >= t0 && a <= t1; }, labels = [], rings = [];
       var st = stacked ? drawStack(root, gPlot, X, Y, t0, t1, m, pw, ph) : null;
       (stacked ? [] : data).forEach(function (sd) {
         var gt = svg("g", { "class": "pt-lock", "data-seat": sd.a.auth_id }, gLock);
         var gl = svg("g", { "class": "pt-line", "data-seat": sd.a.auth_id }, gPlot);
-        var gm = svg("g", { "class": "pt", "data-seat": sd.a.auth_id }, gMarks);
+        var gm = svg("g", { "class": "pt", "data-seat": sd.a.auth_id }, sd.live ? gLow : gMarks);
+        var gr = seatLayer(gResets, sd.a.auth_id);
         /* A finished cycle's target and reset mark are drawn only where the
-           cycle is wide enough on screen for them to read as one. */
+           cycle is wide enough on screen for them to read as one; a mark
+           meeting one already set is left off, as on the stacked form. */
         var cyclePx = sd.dur / pxPer;
         sd.done.forEach(function (c) {
           if (c.at < t0 || c.at - sd.dur > t1) return;
@@ -6226,10 +6277,14 @@ time[data-ts] { cursor: help; }
           }
           if (c.at > t1 || cyclePx < 16) return;
           var ex = X(c.at), ey = Y(c.u), left = Math.max(0, 1 - c.u);
-          var rk = resetMark(gm, ex, ey, sd.col);
-          setTip(rk, { seat: seatLabel(sd.a), col: sd.col, win: view.label, type: "reset", label: "reset",
-            when: absTime(new Date(c.at)), dur: relText(new Date(c.at), now), big: [pct(c.u, 0), "0%"], delta: "", lines: [] });
-          rk.setAttribute("data-tip-visual", "true");
+          var box = { x0: ex - 8, x1: ex + 8, y0: ey - 8, y1: ey + 8 };
+          if (!rings.some(function (o) { return boxesMeet(box, o); })) {
+            rings.push(box);
+            var rk = resetMark(gr, ex, ey, sd.col);
+            setTip(rk, { seat: seatLabel(sd.a), col: sd.col, win: view.label, type: "reset", label: "reset",
+              when: absTime(new Date(c.at)), dur: relText(new Date(c.at), now), big: [pct(c.u, 0), "0%"], delta: "", lines: [] });
+            rk.setAttribute("data-tip-visual", "true");
+          }
           /* A cycle that spent its whole budget left nothing to name. */
           if (view.weekly && !c.est && left >= 0.005 && cyclePx >= 60) {
             labels.push({ el: svgText(gm, clamp(ex, m.l + 34, m.l + pw - 34), ey - 11, pct(left, 0) + " unused", "gap-label t-mono",
@@ -6251,7 +6306,7 @@ time[data-ts] { cursor: help; }
           if (win.hold) lockParts.push(win.hold);
           var tail = next ? (win.end > last.t ? tailTo(X(win.end), Y(last.u)) : null) : (sd.cur !== null ? tailTo(X(now), Y(sd.cur)) : null);
           var drawn = historyLine(gl, win.samples, X, Y, sd.col, tail);
-          resetTips(drawn.resets.filter(function (r) { return inView(r.t, r.t); }), sd.head, sd.key, gMarks, sd.a.auth_id);
+          resetTips(drawn.resets.filter(function (r) { return inView(r.t, r.t); }), sd.head, sd.key, gResets, sd.a.auth_id);
           sectionHits(gl, win.sections, win.v, X, Y, sd.col,
             function (sec) { return sectionTip(sd.head, sec, win.samples, win.end, win.endU, now, !!next || sd.cur === null); },
             function (sec) { return !!(sec.spans && sec.spans.length) && inView(sec.a, sec.b); }, sd.key);
@@ -6263,19 +6318,32 @@ time[data-ts] { cursor: help; }
         lockSleeves(gt, lockParts, X, Y, sd.col, gl);
         if (sd.cur !== null && now >= t0 && now <= t1) {
           presentMark(gm, X(now), Y(sd.cur), sd.col, sd.live);
-          if (sd.live) sinkMark(gm);
         }
       });
       if (view.weekly) drawRanges(root, X, Y, t0, t1, m, pw, st);
-        if (now >= t0 && now <= t1) {
+      var nowText = null;
+      if (now >= t0 && now <= t1) {
         var nx = X(now);
         svg("line", { x1: nx, x2: nx, y1: m.t - 6, y2: Y(0), stroke: "var(--ink-2)", "stroke-width": 1, "stroke-dasharray": "2 2",
           "pointer-events": "none" }, root);
         /* Set left of the line where it would run past the chart's edge. */
         var nearEdge = nx + 34 > m.l + pw + m.r;
-        svgText(root, nearEdge ? nx - 5 : nx + 5, m.t - 4, "NOW", "t-mono gap-label",
+        nowText = svgText(root, nearEdge ? nx - 5 : nx + 5, m.t - 4, "NOW", "t-mono gap-label",
           { "font-size": 9.5, "letter-spacing": ".14em", "font-weight": 600, "text-anchor": nearEdge ? "end" : "start" });
       }
+      /* An unused figure meeting a reset mark or NOW is left off; the mark's
+         tooltip still gives the level it fell from. */
+      var ground = [].map.call(root.querySelectorAll("g.rs-mark > circle"), function (c) {
+        var cx = +c.getAttribute("cx"), cy = +c.getAttribute("cy"), r = +c.getAttribute("r");
+        return { x0: cx - r, x1: cx + r, y0: cy - r, y1: cy + r };
+      });
+      if (nowText) { var nb = nowText.getBBox(); ground.push({ x0: nb.x, x1: nb.x + nb.width, y0: nb.y, y1: nb.y + nb.height }); }
+      labels.forEach(function (l) {
+        var b = l.el.getBBox(), lb = { x0: b.x, x1: b.x + b.width, y0: b.y, y1: b.y + b.height };
+        if (ground.some(function (o) { return boxesMeet(lb, o); })) l.el.parentNode.removeChild(l.el);
+        else ground.push(lb);
+      });
+      allRefusedHits(root, pool, t0, t1, X, m.t, m.l, m.l + pw);
 
       /* The strip: every recorded line over the whole history, with the
          range the plot shows as a window over it. */
