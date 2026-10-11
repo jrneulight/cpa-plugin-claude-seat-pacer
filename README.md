@@ -8,6 +8,10 @@ A [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) plugin for pooling
   <img src="docs/hero-light.png" width="900" alt="Screenshot of the Claude Seat Pacer status page, showing the live bar naming the seat the next new conversation will land on, three seats with their rank and cost, the one taking the next conversation highlighted, and the weekly pace plot with the cost-ordered seat list beside it.">
 </picture>
 
+> This fork (jrneulight) adds an opt-in `pace.expiry` rule that ranks a seat
+> about to lose unused weekly quota ahead of the cost order; see
+> [Expiry window (fork)](docs/how-it-picks.md#expiry-window-fork).
+
 ## Why
 
 A Claude subscription has a 5-hour limit and a weekly limit, and weekly quota

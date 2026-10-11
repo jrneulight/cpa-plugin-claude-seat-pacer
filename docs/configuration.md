@@ -62,6 +62,10 @@ open conversation one prompt-cache miss.
         scoped-weight: 0.5      # weight of a model-family weekly window
         session-weight: 0       # weight of the 5-hour window; it is a rate limit, not a budget
         hysteresis-margin: 0.05 # cost gap a challenger must beat to move a binding when override-threshold is off
+        expiry:                 # fork only; see "Expiry window (fork)" in how-it-picks.md
+          enabled: false        # rank a seat near its weekly reset with quota left ahead of the cost order
+          window: 24h           # how close to its weekly reset a seat counts as expiring; 1h to 168h
+          min-headroom: 0.03    # unused share of the weekly quota it needs; above 0, at most 1
       quota:
         poll-interval: 2m       # usage-endpoint read cadence; below 30s falls back to the default
         request-timeout: 10s    # one usage read; at most 1m
@@ -83,6 +87,12 @@ its default. `usage-url` receives every seat's token, so it must be `https` to
 default, with a status-page warning. A block that doesn't parse loads the
 plugin disabled.
 
+`pace.expiry.window` outside 1h to 168h, and `pace.expiry.min-headroom` below
+0 or above 1, run at their defaults (24h and 0.03), and the status page says
+so. A zero leaves either at its default. Durations have no day unit, so write
+three days as `72h`; `3d` does not parse and loads the plugin disabled.
+
 The Management Center saves each field as a top-level dotted key, such as
-`affinity.ttl: 2h`, which wins over the nested form. When the two disagree the
+`affinity.ttl: 2h` or `pace.expiry.enabled: true`, which wins over the nested
+form. When the two disagree the
 status page names the dotted key; remove one.
