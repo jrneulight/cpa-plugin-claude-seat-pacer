@@ -612,6 +612,17 @@ svg.pace g.reset-mark:focus-visible circle { stroke: var(--focus); stroke-width:
    the list drops under the plot and lays its rows out in columns. */
 .pace-body { display: grid; grid-template-columns: minmax(0, 1fr) 14rem; gap: 14px; align-items: start; }
 .pace-body > :is(#pace-curve, #session-chart) { min-width: 0; }
+/* Over time's plot column holds its legend. Beside the list the column
+   gives way, so the legend runs the card's width under both; under 1000px it
+   stays under the plot, above the list. */
+.hist-plot { min-width: 0; }
+@media (min-width: 1001px) {
+  .hist-plot { display: contents; }
+  #hist-chart { min-width: 0; }
+  .pace-body:has(> .hist-plot) { row-gap: 0; }
+  #hist-legend { grid-column: 1 / -1; grid-row: 2; }
+  .hist-plot ~ .pace-rank { grid-column: 2; grid-row: 1; }
+}
 /* Beside the plot the list is out of flow, so the plot alone sets the row's
    height and a long pool scrolls inside the list's column; each family's
    head stays on screen above its rows, pinned over the scroller's inset so
@@ -1262,8 +1273,9 @@ time[data-ts] { cursor: help; }
           </div>
         </div>
         </div>
-        <!-- What the plot draws that does not name itself, under it as on the
-             other charts, one row high whichever view shows. -->
+        <!-- What the plot draws that does not name itself. Each render moves
+             it under the plot of the window shown, as Over time's sits under
+             its plot, and it keeps one height whichever view shows. -->
         <ul class="legend" id="pace-legend" aria-label="Plot marks"></ul>
         <!-- Static and shared by every view, so the fold's open state and a
              focused summary outlive the refresh and a switch of window. Both
@@ -1295,13 +1307,17 @@ time[data-ts] { cursor: help; }
           <button type="button" id="hist-live" hidden>Back to now</button>
           <span class="hist-range" id="hist-range"></span>
         </div>
+        <!-- The legend follows the plot, so it stays under it when the list
+             drops below. -->
         <div class="pace-body">
-          <div id="hist-chart"></div>
+          <div class="hist-plot">
+            <div id="hist-chart"></div>
+            <ul class="legend" id="hist-legend" aria-label="Plot marks"></ul>
+          </div>
           <div class="pace-rank">
             <div id="hist-rank" class="side-list"></div>
           </div>
         </div>
-        <ul class="legend" id="hist-legend" aria-label="Plot marks"></ul>
       </div>
     </section>
 
@@ -3962,15 +3978,17 @@ time[data-ts] { cursor: help; }
   }
 
   /* A pointer target along each pool-wide refusal's edge, 8px tall from y
-     and at least 10px wide, over everything the plot draws, with its
-     stretch in the tooltip. */
-  function allRefusedHits(parent, spans, t0, t1, xOf, y, left, right) {
+     and at least 10px wide, with its stretch in the tooltip, set in parent
+     before the node before: under every line, sleeve and mark, so it takes
+     the pointer only where none of them does. */
+  function allRefusedHits(parent, before, spans, t0, t1, xOf, y, left, right) {
     allRefusedRuns(spans, t0, t1, xOf, left, right).forEach(function (r) {
       var sp = r.sp;
       var hw = Math.max(10, r.w);
-      svg("rect", { "class": "hs-all-refused-hit", x: r.x0 + (r.w - hw) / 2, y: y, width: hw, height: 8, fill: "transparent",
+      var hit = svg("rect", { "class": "hs-all-refused-hit", x: r.x0 + (r.w - hw) / 2, y: y, width: hw, height: 8, fill: "transparent",
         "data-tip": ALL_REFUSED_KEY + "\n" + absTime(new Date(sp[0])) + " – " + absTime(new Date(sp[1])) +
           " (" + durText(Math.round((sp[1] - sp[0]) / 1000)) + ")" }, parent);
+      parent.insertBefore(hit, before);
     });
   }
 
@@ -4343,8 +4361,9 @@ time[data-ts] { cursor: help; }
     });
   }
 
-  /* A seat's group in a chart's top layer, for the parts of its line that
-     are stops of their own. It dims and lifts with the seat's line. */
+  /* A seat's group in layer, a layer over its line, for the parts of the
+     line that are stops or marks of their own. It dims and lifts with the
+     seat's line. */
   function seatLayer(layer, id) {
     var g = svg("g", { "class": "pt-line" }, layer);
     g.setAttribute("data-seat", id);
@@ -4419,7 +4438,6 @@ time[data-ts] { cursor: help; }
 
   function renderPace(st, seats, ranks) {
     var host = $("pace-curve");
-    paceLegend();
     host.textContent = "";
     var fams = scopedFamilies(st);
     /* A cap has a view only where the cost weighs it: a weight of zero
@@ -4704,9 +4722,8 @@ time[data-ts] { cursor: help; }
     if (anyReset) resetRow(leg);
     host.appendChild(leg);
   }
-  /* The legend list, which each render moves into the plot's column before
-     clearing that column, so it stays with its plot when the list drops
-     under it. */
+  /* The legend list, held once found: a render that clears the column
+     holding it detaches it, and lineLegend puts it back under the plot. */
   var paceLegendEl = null;
   function paceLegend() { return paceLegendEl || (paceLegendEl = $("pace-legend")); }
 
@@ -4885,7 +4902,6 @@ time[data-ts] { cursor: help; }
 
   function renderSession(st, seats) {
     var host = $("session-chart");
-    paceLegend();
     host.textContent = "";
     var paceCfg = (st.config && st.config.pace) || {};
     /* The view's line carries what this window's headroom is worth in the
@@ -5947,14 +5963,14 @@ time[data-ts] { cursor: help; }
       var minT = 2 * HS_HATCH_P * (t1 - t0) / pw;
       var refused = order.map(function (i) {
         var wins = data[i].wins;
-        return refusedSpans(data[i].a, view, t0, t1, now).map(function (sp) {
+        return mergeSpans(refusedSpans(data[i].a, view, t0, t1, now).map(function (sp) {
           var w = wins.filter(function (win) { return win.start <= sp[0] && sp[0] < win.end; })[0];
           return w ? [settledStart(sp[0], sp[1], w.samples, w.end, w.endU), sp[1]] : sp;
         }).filter(function (sp) { return sp[1] > sp[0]; }).map(function (sp) {
           if (sp[1] - sp[0] >= minT) return sp;
           var mid = (sp[0] + sp[1]) / 2;
           return [Math.max(t0, mid - minT / 2), Math.min(t1, mid + minT / 2)];
-        });
+        }));
       });
       var ends = [now];
       refused.forEach(function (sps) { sps.forEach(function (sp) { ends.push(sp[0], sp[1]); }); });
@@ -6360,7 +6376,11 @@ time[data-ts] { cursor: help; }
         if (ground.some(function (o) { return boxesMeet(lb, o); })) l.el.parentNode.removeChild(l.el);
         else ground.push(lb);
       });
-      allRefusedHits(root, pool, t0, t1, X, m.t, m.l, m.l + pw);
+      /* Stacked, the strip goes just over the stack's own pointer target;
+         drawn as lines, under the lowest layer of the plot. */
+      var stackHit = root.querySelector("rect.hs-hit");
+      if (stackHit) allRefusedHits(stackHit.parentNode, stackHit.nextSibling, pool, t0, t1, X, m.t, m.l, m.l + pw);
+      else allRefusedHits(gLock, gLock.firstChild, pool, t0, t1, X, m.t, m.l, m.l + pw);
 
       /* The strip: every recorded line over the whole history, with the
          range the plot shows as a window over it. */
