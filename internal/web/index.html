@@ -1712,6 +1712,7 @@ time[data-ts] { cursor: help; }
     "no-bearing-window": "no window applies",
     "provider-rejected": "refused",
     "spent": "full",
+    "reserve": "at reserve ceiling",
     "bad-reading": "bad reading",
     "not-a-candidate": "held by host"
   };
@@ -4608,6 +4609,17 @@ time[data-ts] { cursor: help; }
       "never moves for it.";
   }
 
+  /* A seat's reserve ceilings (the reserves config) in words, and "" for a
+     seat no reserve names. A family key is that family's weekly window. */
+  function ceilingsText(c) {
+    var keys = Object.keys(c || {}).sort();
+    if (!keys.length) return "";
+    return "reserve: takes no request once " + keys.map(function (k) {
+      var name = k === "five_hour" ? "5h" : k === "seven_day" ? "7d" : k.charAt(0).toUpperCase() + k.slice(1) + " weekly";
+      return name + " reaches " + pct(c[k], 0);
+    }).join(", ") + "; it is paced against that share of each window";
+  }
+
   /* One entry of a note: the term that names the topic, and the definition
      the caller fills. */
   function def(dl, term) {
@@ -6702,6 +6714,8 @@ time[data-ts] { cursor: help; }
         mark.appendChild(tipOnly(h("span", "rank-expiring", "expiring"),
           "its 7d window resets within pace.expiry.window with quota left, so it ranks ahead of the cost order"));
       }
+      var held = ceilingsText(a.ceilings);
+      if (held) mark.appendChild(tipOnly(h("span", "rank-expiring", "reserve"), held));
       li.appendChild(mark);
       var cost = h("span", "rank-cost", costText(sc));
       if (elig && outside) {

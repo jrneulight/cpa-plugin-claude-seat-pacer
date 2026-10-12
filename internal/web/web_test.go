@@ -1201,3 +1201,30 @@ func TestPublicTextKeepsPluginText(t *testing.T) {
 		}
 	}
 }
+
+// The page shows each seat's reserve ceilings, but not the reserves config,
+// whose accounts are routinely addresses.
+func TestPageKeepsCeilingsAndDropsReserveAccounts(t *testing.T) {
+	st := model.Status{
+		Config: model.Config{Reserves: []model.ReserveConfig{{Accounts: []string{"charles@neulightco.com"}, Ceilings: model.Ceilings{"five_hour": 0.7}}}},
+		Auths: []model.AuthStatus{{
+			AuthID:   "claude-charles.json",
+			Ceilings: model.Ceilings{"five_hour": 0.7},
+			Score:    model.Score{AuthID: "claude-charles.json", Reason: model.ReasonReserve},
+		}},
+	}
+	got := reduceForPage(st, testIDKey)
+	if got.Config.Reserves != nil {
+		t.Errorf("page config reserves = %+v, want none", got.Config.Reserves)
+	}
+	if c := got.Auths[0].Ceilings; c["five_hour"] != 0.7 || got.Auths[0].Score.Reason != model.ReasonReserve {
+		t.Errorf("page row = %+v", got.Auths[0])
+	}
+	body, err := encodeStatus(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(body, []byte("charles")) {
+		t.Errorf("page body names the account: %s", body)
+	}
+}
