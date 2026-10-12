@@ -11,6 +11,8 @@ A [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) plugin for pooling
 > This fork (jrneulight) adds an opt-in `pace.expiry` rule that ranks a seat
 > about to lose unused weekly quota ahead of the cost order; see
 > [Expiry window (fork)](docs/how-it-picks.md#expiry-window-fork).
+> It also adds opt-in per-account `reserves` that hold a seat off once it
+> reaches a usage ceiling; see [Account reserves (fork)](docs/how-it-picks.md#account-reserves-fork).
 
 ## Why
 
