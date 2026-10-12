@@ -5,6 +5,7 @@ import (
 	"math"
 	"net"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -26,6 +27,93 @@ type Config struct {
 	Pace     PaceConfig     `yaml:"pace" json:"pace"`
 	Quota    QuotaConfig    `yaml:"quota" json:"quota"`
 	Web      WebConfig      `yaml:"web" json:"web"`
+
+	// Reserves hold back part of named accounts' quota. A credential a
+	// reserve names takes no request once a window bearing on it reaches the
+	// reserve's ceiling for that window. Empty reserves nothing.
+	Reserves []ReserveConfig `yaml:"reserves" json:"reserves,omitempty"`
+}
+
+// ReserveConfig is one reserve: the accounts it covers and the utilization
+// ceiling it sets on each window it names.
+type ReserveConfig struct {
+	// Accounts names credentials by auth id, credential file name, account
+	// email, host label or operator note, matched case-insensitively.
+	Accounts []string `yaml:"accounts" json:"accounts"`
+	// Ceilings maps a window to the fraction of it, above 0 and at most 1,
+	// the account may use. Keys are five_hour, seven_day, or a model family
+	// (opus, sonnet, fable, haiku) naming that family's weekly window.
+	Ceilings Ceilings `yaml:"ceilings" json:"ceilings"`
+}
+
+// Ceilings maps a ceiling key (CeilingKey) to a utilization ceiling.
+type Ceilings map[string]float64
+
+// Ceiling keys for the session and all-models weekly windows. A model-family
+// weekly window's key is its family name lowercased.
+const (
+	CeilingSession = string(WindowSession)
+	CeilingWeekly  = string(WindowWeekly)
+)
+
+// CeilingKey is the key a window's ceiling is stored under, and "" for a
+// window no ceiling can name.
+func CeilingKey(w Window) string {
+	switch w.Kind {
+	case WindowSession:
+		return CeilingSession
+	case WindowWeekly:
+		return CeilingWeekly
+	case WindowWeeklyScoped:
+		return strings.ToLower(FamilyOf(w.Scope))
+	}
+	return ""
+}
+
+// For is the ceiling set on a window, and false when none is.
+func (c Ceilings) For(w Window) (float64, bool) {
+	key := CeilingKey(w)
+	if key == "" {
+		return 0, false
+	}
+	v, ok := c[key]
+	return v, ok
+}
+
+// CeilingsFor is the ceilings every reserve naming any of names sets, the
+// lowest where two set the same window, and nil when no reserve names one.
+// Names compare case-insensitively; a blank name matches nothing.
+func (c Config) CeilingsFor(names ...string) Ceilings {
+	var out Ceilings
+	for _, r := range c.Reserves {
+		if !r.names(names) {
+			continue
+		}
+		if out == nil {
+			out = make(Ceilings, len(r.Ceilings))
+		}
+		for k, v := range r.Ceilings {
+			if old, ok := out[k]; !ok || v < old {
+				out[k] = v
+			}
+		}
+	}
+	return out
+}
+
+func (r ReserveConfig) names(names []string) bool {
+	for _, n := range names {
+		n = strings.ToLower(strings.TrimSpace(n))
+		if n == "" {
+			continue
+		}
+		for _, a := range r.Accounts {
+			if a == n {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // AffinityConfig governs conversation stickiness.
@@ -352,7 +440,66 @@ func (c *Config) Normalize() (warnings []string) {
 		warnings = append(warnings, aboveBound("web.history-limit", c.Web.HistoryLimit, maxHistoryLimit))
 		c.Web.HistoryLimit = maxHistoryLimit
 	}
+	return append(warnings, c.normalizeReserves()...)
+}
+
+// normalizeReserves folds each reserve's accounts and ceiling keys, and drops
+// what cannot apply with a warning: a ceiling outside (0, 1], a key naming no
+// window, and a reserve left with no account or no ceiling. The warnings name
+// a reserve by its position, never by an account, which is routinely an
+// address.
+func (c *Config) normalizeReserves() (warnings []string) {
+	if len(c.Reserves) == 0 {
+		return nil
+	}
+	kept := make([]ReserveConfig, 0, len(c.Reserves))
+	for i, r := range c.Reserves {
+		at := fmt.Sprintf("reserves[%d]", i)
+		accounts := foldKeys(r.Accounts)
+		ceilings := make(Ceilings, len(r.Ceilings))
+		keys := make([]string, 0, len(r.Ceilings))
+		for k := range r.Ceilings {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, raw := range keys {
+			v := r.Ceilings[raw]
+			key := ceilingKeyOf(raw)
+			switch {
+			case key == "":
+				warnings = append(warnings, fmt.Sprintf("%s.ceilings.%s names no window; use five_hour, seven_day or a model family such as fable. It is ignored", at, raw))
+				continue
+			case math.IsNaN(v) || v <= 0 || v > 1:
+				warnings = append(warnings, fmt.Sprintf("%s.ceilings.%s %v is not above 0 and at most 1, so it is ignored", at, raw, v))
+				continue
+			}
+			if old, ok := ceilings[key]; !ok || v < old {
+				ceilings[key] = v
+			}
+		}
+		switch {
+		case len(accounts) == 0:
+			warnings = append(warnings, at+" names no account, so it is ignored")
+		case len(ceilings) == 0:
+			warnings = append(warnings, at+" sets no usable ceiling, so it is ignored")
+		default:
+			kept = append(kept, ReserveConfig{Accounts: accounts, Ceilings: ceilings})
+		}
+	}
+	c.Reserves = kept
 	return warnings
+}
+
+// ceilingKeyOf folds a ceiling key as written onto its canonical form: the
+// session or all-models weekly kind, or a model family lowercased. It returns
+// "" for a key naming neither.
+func ceilingKeyOf(raw string) string {
+	switch key := strings.ToLower(strings.TrimSpace(raw)); key {
+	case CeilingSession, CeilingWeekly:
+		return key
+	default:
+		return strings.ToLower(FamilyOf(key))
+	}
 }
 
 // Upper bounds Normalize clamps to.
