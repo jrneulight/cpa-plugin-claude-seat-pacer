@@ -101,11 +101,13 @@ func (p *Plugin) Status(now time.Time, modelID string) model.Status {
 		if !hasSnap {
 			snap = model.AuthSnapshot{AuthID: id, Windows: []model.Window{}}
 		}
+		ceilings := entryCeilings(cfg, id, entry, listed)
 		row := model.AuthStatus{
 			AuthID:   id,
 			Label:    snap.Label,
 			Snapshot: snap,
-			Score:    pace.ScoreWithStaleness(cfg, snap, hasSnap, id, modelID, now),
+			Score:    pace.ScoreWithStaleness(cfg, snap, hasSnap, ceilings, id, modelID, now),
+			Ceilings: ceilings,
 			Bindings: counts[id],
 			Cache:    cache[id],
 			History:  p.quota.History(id, quota.HistoryPublishMax, now),
@@ -142,7 +144,7 @@ func (p *Plugin) Status(now time.Time, modelID string) model.Status {
 		}
 		seats[id] = state
 	}
-	warnings := Warnings(cfg.Enabled, configWarnings, listErr, single, rows, seats)
+	warnings := Warnings(cfg.Enabled, append(append([]string(nil), configWarnings...), reserveWarnings(cfg, auths)...), listErr, single, rows, seats)
 
 	decisions := p.decisions.newestFirst()
 	bound := bindings.All()

@@ -1170,21 +1170,21 @@ func TestStalenessGatesRunBeforeScoring(t *testing.T) {
 	fresh := seat("fresh", now, weekly(now, 0.5, 0.2))
 	old := seat("old", now.Add(-cfg.Quota.MaxStaleness-time.Minute), weekly(now, 0.5, 0.2))
 
-	if s := ScoreWithStaleness(cfg, model.AuthSnapshot{}, false, "missing", opus, now); s.Eligible ||
+	if s := ScoreWithStaleness(cfg, model.AuthSnapshot{}, false, nil, "missing", opus, now); s.Eligible ||
 		s.Reason != model.ReasonNoSnapshot || s.AuthID != "missing" {
 		t.Errorf("no snapshot = %+v, want ineligible %q for the id the caller holds", s, model.ReasonNoSnapshot)
 	}
-	if s := ScoreWithStaleness(cfg, old, true, "old", opus, now); s.Eligible || s.Reason != model.ReasonStale {
+	if s := ScoreWithStaleness(cfg, old, true, nil, "old", opus, now); s.Eligible || s.Reason != model.ReasonStale {
 		t.Errorf("stale snapshot = %+v, want ineligible %q", s, model.ReasonStale)
 	}
 	// The candidate id wins over the snapshot's own, which may be spelled
 	// differently or not at all.
-	if s := ScoreWithStaleness(cfg, fresh, true, "offered-as", opus, now); !s.Eligible ||
+	if s := ScoreWithStaleness(cfg, fresh, true, nil, "offered-as", opus, now); !s.Eligible ||
 		s.AuthID != "offered-as" || len(s.Windows) == 0 {
 		t.Errorf("fresh snapshot = %+v, want it scored under the offered id", s)
 	}
 
-	ranked := RankWithStaleness(cfg, snapshots(fresh, old), []string{"fresh", "old"}, opus, now)
+	ranked := RankWithStaleness(cfg, snapshots(fresh, old), nil, []string{"fresh", "old"}, opus, now)
 	if got := rankedIDs(ranked); !reflect.DeepEqual(got, []string{"fresh", "old"}) {
 		t.Fatalf("Rank = %v, want the fresh seat ahead of the stale one", got)
 	}

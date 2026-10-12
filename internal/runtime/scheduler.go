@@ -81,11 +81,22 @@ func (in pickInput) hasAlternativeHome(authID string) bool {
 	return false
 }
 
-// refused reports whether a candidate's score says the provider will not serve
-// it: a refusal, or a window it reports as full.
+// refused reports whether a candidate's score says it will not be served: a
+// refusal, a window the provider reports as full, or a window at its reserve
+// ceiling.
 func (in pickInput) refused(authID string) bool {
-	reason := in.scoreOf(authID).Reason
-	return reason == model.ReasonRejected || reason == model.ReasonSpent
+	switch in.scoreOf(authID).Reason {
+	case model.ReasonRejected, model.ReasonSpent, model.ReasonReserve:
+		return true
+	}
+	return false
+}
+
+// unservable reports whether a credential is no home for this request: the
+// provider has refused a window bearing on the model, or a window bearing on
+// it has reached its reserve ceiling, which holds every request off it.
+func (in pickInput) unservable(authID string) bool {
+	return blockedFor(in.snaps[authID], in.req.Model) || in.scoreOf(authID).Reason == model.ReasonReserve
 }
 
 // pick is the routing decision. It performs in-memory reads only: the host
@@ -104,7 +115,8 @@ func (in pickInput) refused(authID string) bool {
 //     when its pace score trails (OverrideThreshold), unless OverrideThreshold
 //     is off and the pace winner beats it by the hysteresis margin. A binding
 //     that fails any of those fails over to the cold pick, except that a
-//     rejected binding stands when no other candidate can take the model.
+//     rejected binding stands when no other candidate can take the model. A
+//     credential at a reserve ceiling counts as rejected here.
 //  3. Cold pick: pace.Rank over the candidates with stale snapshots marked
 //     ineligible; the pace winner takes the session, an expiring seat first
 //     when pace.expiry is on. When nothing is eligible
@@ -175,7 +187,7 @@ func (p *Plugin) pick(req SchedulerPickRequest) SchedulerPickResponse {
 	if in.identity.Key == "" && !usable {
 		return decline("no session key and no usable quota reading")
 	}
-	in.scores = pace.RankWithStaleness(cfg, in.snaps, in.candidates, req.Model, now)
+	in.scores = pace.RankWithStaleness(cfg, in.snaps, p.reserveCeilings(cfg, in.candidates), in.candidates, req.Model, now)
 
 	if cfg.Affinity.Enabled && in.identity.Key != "" {
 		if resp, ok := p.pickByAffinity(in); ok {
@@ -195,7 +207,7 @@ func (p *Plugin) pickByAffinity(in pickInput) (SchedulerPickResponse, bool) {
 		parent, ok := bindings.Lookup(in.provider, in.req.Model, id.ParentKey, in.now)
 		// A credential the provider has already rejected is no better a home
 		// for the child than for the parent.
-		if ok && in.isCandidate(parent.AuthID) && !blockedFor(in.snaps[parent.AuthID], in.req.Model) {
+		if ok && in.isCandidate(parent.AuthID) && !in.unservable(parent.AuthID) {
 			if !in.pinned {
 				bindings.Bind(in.provider, in.req.Model, id.Key, parent.AuthID, in.now)
 			}
@@ -225,8 +237,9 @@ func (p *Plugin) pickByAffinity(in pickInput) (SchedulerPickResponse, bool) {
 	// other candidate able to take the model the move buys nothing and costs a
 	// cross-org cache miss, and the fewest-conversations fallback alternates
 	// seats request by request, so the binding stands until somewhere better
-	// exists.
-	if blockedFor(in.snaps[bound.AuthID], in.req.Model) {
+	// exists. A window at its reserve ceiling is treated the same way: the
+	// reserve holds every request off it.
+	if in.unservable(bound.AuthID) {
 		if !in.hasAlternativeHome(bound.AuthID) {
 			note := "binding kept; no other seat can take this model"
 			if len(in.candidates) == 1 {
@@ -239,7 +252,11 @@ func (p *Plugin) pickByAffinity(in pickInput) (SchedulerPickResponse, bool) {
 				Scores:       in.scores,
 			}), true
 		}
-		return p.pickCold(in, bound.AuthID, "bound credential is refused for this model"), true
+		note := "bound credential is refused for this model"
+		if !blockedFor(in.snaps[bound.AuthID], in.req.Model) {
+			note = "bound credential is at its reserve ceiling"
+		}
+		return p.pickCold(in, bound.AuthID, note), true
 	}
 	// Whether the binding moves is judged on cost alone, so a seat becoming
 	// expiring never moves a live conversation; where a moving one lands is
