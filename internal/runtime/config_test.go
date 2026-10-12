@@ -161,3 +161,50 @@ func TestStatusIsSilentWhenTheDefaultMaxStalenessIsRaised(t *testing.T) {
 		t.Errorf("warnings = %q, want none for a max-staleness the operator never set", status.Warnings)
 	}
 }
+
+// The expiry rule's keys arrive nested or as the dotted keys the Management
+// Center writes, and a block that names neither leaves the rule off.
+func TestExpiryKeysDecode(t *testing.T) {
+	for name, tc := range map[string]struct {
+		block    string
+		want     model.ExpiryConfig
+		warnings []string
+	}{
+		"absent": {"enabled: true\n", model.Defaults().Pace.Expiry, nil},
+		"nested": {"pace:\n  expiry:\n    enabled: true\n    window: 12h\n    min-headroom: 0.1\n",
+			model.ExpiryConfig{Enabled: true, Window: 12 * time.Hour, MinHeadroom: 0.1}, nil},
+		"dotted": {"pace.expiry.enabled: true\npace.expiry.window: 36h\npace.expiry.min-headroom: 0.05\n",
+			model.ExpiryConfig{Enabled: true, Window: 36 * time.Hour, MinHeadroom: 0.05}, nil},
+		"dotted over nested": {"pace:\n  expiry:\n    enabled: false\npace.expiry.enabled: true\n",
+			model.ExpiryConfig{Enabled: true, Window: 24 * time.Hour, MinHeadroom: 0.03},
+			[]string{"pace.expiry.enabled overrides pace: expiry: enabled; remove one"}},
+		"bounded": {"pace.expiry.enabled: true\npace.expiry.window: 200h\npace.expiry.min-headroom: 2\n",
+			model.ExpiryConfig{Enabled: true, Window: 24 * time.Hour, MinHeadroom: 0.03},
+			[]string{
+				"pace.expiry.window 200h0m0s is outside 1h0m0s to 168h0m0s, so it runs at the default 24h0m0s",
+				"pace.expiry.min-headroom 2 is outside 0 to 1, so it runs at the default 0.03",
+			}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, warnings, err := decodeConfig([]byte(tc.block))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Pace.Expiry != tc.want {
+				t.Errorf("expiry = %+v, want %+v", cfg.Pace.Expiry, tc.want)
+			}
+			if !reflect.DeepEqual(warnings, tc.warnings) {
+				t.Errorf("warnings = %q, want %q", warnings, tc.warnings)
+			}
+		})
+	}
+}
+
+// Go durations have no day unit, so a window written in days does not parse
+// and the plugin loads inert rather than routing on a half-read block.
+func TestExpiryWindowInDaysDoesNotParse(t *testing.T) {
+	cfg, _, err := decodeConfig([]byte("enabled: true\npace.expiry.enabled: true\npace.expiry.window: 2d\n"))
+	if err == nil || cfg.Enabled || cfg.Pace.Expiry.Enabled {
+		t.Fatalf("2d decoded: err %v, enabled %v, expiry %v", err, cfg.Enabled, cfg.Pace.Expiry.Enabled)
+	}
+}

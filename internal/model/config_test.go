@@ -428,3 +428,52 @@ func TestNormalizeKeepsMaxStalenessPastTwoPolls(t *testing.T) {
 		t.Errorf("MaxStaleness = %v with warnings %q, want exactly two polls kept silently", kept.Quota.MaxStaleness, warnings)
 	}
 }
+
+// The expiry rule is off unless an operator turns it on, and its window and
+// headroom fall back to their defaults outside their ranges, saying so when
+// the operator set the value.
+func TestNormalizeBoundsTheExpiryRule(t *testing.T) {
+	d := Defaults()
+	if d.Pace.Expiry.Enabled || d.Pace.Expiry.Window != 24*time.Hour || d.Pace.Expiry.MinHeadroom != 0.03 {
+		t.Fatalf("expiry defaults = %+v, want off, 24h, 0.03", d.Pace.Expiry)
+	}
+	for _, tc := range []struct {
+		name        string
+		window      time.Duration
+		headroom    float64
+		wantWindow  time.Duration
+		wantHead    float64
+		wantWarning string
+	}{
+		{"unset", 0, 0, 24 * time.Hour, 0.03, ""},
+		{"in range", 36 * time.Hour, 0.1, 36 * time.Hour, 0.1, ""},
+		{"lowest window", time.Hour, 1, time.Hour, 1, ""},
+		{"highest window", 7 * 24 * time.Hour, 0.5, 7 * 24 * time.Hour, 0.5, ""},
+		{"window too short", 30 * time.Minute, 0.03, 24 * time.Hour, 0.03,
+			"pace.expiry.window 30m0s is outside 1h0m0s to 168h0m0s, so it runs at the default 24h0m0s"},
+		{"window too long", 8 * 24 * time.Hour, 0.03, 24 * time.Hour, 0.03,
+			"pace.expiry.window 192h0m0s is outside 1h0m0s to 168h0m0s, so it runs at the default 24h0m0s"},
+		{"negative window", -time.Hour, 0.03, 24 * time.Hour, 0.03,
+			"pace.expiry.window -1h0m0s is outside 1h0m0s to 168h0m0s, so it runs at the default 24h0m0s"},
+		{"headroom above one", 24 * time.Hour, 1.5, 24 * time.Hour, 0.03,
+			"pace.expiry.min-headroom 1.5 is outside 0 to 1, so it runs at the default 0.03"},
+		{"negative headroom", 24 * time.Hour, -0.1, 24 * time.Hour, 0.03,
+			"pace.expiry.min-headroom -0.1 is outside 0 to 1, so it runs at the default 0.03"},
+		{"NaN headroom", 24 * time.Hour, math.NaN(), 24 * time.Hour, 0.03,
+			"pace.expiry.min-headroom NaN is outside 0 to 1, so it runs at the default 0.03"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{Pace: PaceConfig{Expiry: ExpiryConfig{Enabled: true, Window: tc.window, MinHeadroom: tc.headroom}}}
+			warnings := cfg.Normalize()
+			if !cfg.Pace.Expiry.Enabled {
+				t.Error("Normalize turned the rule off")
+			}
+			if cfg.Pace.Expiry.Window != tc.wantWindow || cfg.Pace.Expiry.MinHeadroom != tc.wantHead {
+				t.Errorf("expiry = %v %v, want %v %v", cfg.Pace.Expiry.Window, cfg.Pace.Expiry.MinHeadroom, tc.wantWindow, tc.wantHead)
+			}
+			if !onlyWarning(warnings, tc.wantWarning) {
+				t.Errorf("warned %q, want %q", warnings, tc.wantWarning)
+			}
+		})
+	}
+}

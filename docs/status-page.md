@@ -4,8 +4,10 @@ The Management Center gains a "Claude Seat Pacer" entry: a live dashboard of
 what the plugin decides and the numbers behind it. The page calls a seat's
 plan its target, and ranks the eligible seats by cost: the weighted gap to
 target, negative while a seat is behind, so the lowest cost takes the next
-new conversation. A seat held off ranks below them, including one the host
-has disabled ("host disabled") or holds in a cooldown that covers every model
+new conversation. With `pace.expiry` on (this fork), a seat near its weekly
+reset with quota left is marked "expiring" and ranks ahead of the cost order;
+[How it picks](how-it-picks.md#expiry-window-fork) has the rule. A seat held
+off ranks below the eligible seats, including one the host has disabled ("host disabled") or holds in a cooldown that covers every model
 ("held by host", with the time the host lets it back). A seat whose served
 models the host cools on their own keeps its rank, since the host still
 offers it for other models, and its tooltip names the host status.

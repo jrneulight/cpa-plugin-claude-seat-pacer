@@ -154,7 +154,42 @@ func ScoreAuth(cfg model.PaceConfig, snap model.AuthSnapshot, modelID string, no
 		score.Eligible = false
 		score.Reason = model.ReasonSpent
 	}
+	if score.Eligible && cfg.Expiry.Enabled {
+		score.Expiring = expiring(cfg.Expiry, snap.Windows, family, now)
+	}
 	return score
+}
+
+// expiring reports whether an eligible credential falls under the
+// expiry-window rule: its all-models weekly window is open, resets after now
+// and within the rule's window, and holds at least MinHeadroom unused.
+//
+// A model-family weekly window bearing on the request has to hold that
+// headroom too. The rule prefers a credential so its expiring budget gets
+// spent, and a request whose family cap is nearly spent cannot spend it; the
+// family window's own reset does not make a credential expiring, since
+// letting it lapse loses only that family's share. A family window that does
+// not bear on the request is not read.
+func expiring(cfg model.ExpiryConfig, windows []model.Window, family string, now time.Time) bool {
+	found := false
+	for _, w := range windows {
+		switch {
+		case w.Kind == model.WindowWeekly:
+			if found {
+				continue
+			}
+			left := w.ResetsAt.Sub(now)
+			if !open(w) || left <= 0 || left > cfg.Window || 1-w.Utilization < cfg.MinHeadroom {
+				return false
+			}
+			found = true
+		case w.Kind == model.WindowWeeklyScoped && w.BearsOn(family):
+			if 1-w.Utilization < cfg.MinHeadroom {
+				return false
+			}
+		}
+	}
+	return found
 }
 
 // open reports whether a window has a period to place on the curve.
@@ -175,9 +210,10 @@ func weightOf(cfg model.PaceConfig, w model.Window) float64 {
 	return 0
 }
 
-// Rank scores every candidate and orders the results: eligible before
-// ineligible, then Cost ascending, then AuthID ascending so repeated calls on
-// the same inputs agree regardless of the order the host offered candidates in.
+// Rank scores every candidate and orders the results as better does: eligible
+// before ineligible, expiring before the rest of the eligible, then Cost
+// ascending, then AuthID ascending so repeated calls on the same inputs agree
+// regardless of the order the host offered candidates in.
 // A repeated id is scored and returned once. A candidate with no snapshot
 // scores ineligible with model.ReasonNoSnapshot. The arguments are not
 // modified.
@@ -243,10 +279,40 @@ func RankWithStaleness(cfg model.Config, snaps map[string]model.AuthSnapshot, ca
 	return scores
 }
 
-// better is the ranking order: eligible first, then a comparable Cost ahead of
-// a NaN one, then lower Cost, then lower AuthID. NaN compares false against
-// every number, so it needs its own branch for the order to stay transitive.
+// better is the ranking order: eligible first, then an expiring credential
+// ahead of one that is not, two expiring ones by the sooner weekly reset, then
+// cheaper as cheaper orders them. Expiring is never set while the expiry rule
+// is off, so the order is then cheaper's alone.
 func better(a, b model.Score) bool {
+	if a.Eligible != b.Eligible {
+		return a.Eligible
+	}
+	if a.Expiring != b.Expiring {
+		return a.Expiring
+	}
+	if a.Expiring {
+		if ra, rb := weeklyReset(a), weeklyReset(b); !ra.Equal(rb) {
+			return ra.Before(rb)
+		}
+	}
+	return cheaper(a, b)
+}
+
+// weeklyReset is the reset of a score's all-models weekly window, the one the
+// expiry rule reads.
+func weeklyReset(s model.Score) time.Time {
+	for _, ws := range s.Windows {
+		if ws.Kind == model.WindowWeekly {
+			return ws.ResetsAt
+		}
+	}
+	return time.Time{}
+}
+
+// cheaper is the cost order: eligible first, then a comparable Cost ahead of a
+// NaN one, then lower Cost, then lower AuthID. NaN compares false against
+// every number, so it needs its own branch for the order to stay transitive.
+func cheaper(a, b model.Score) bool {
 	if a.Eligible != b.Eligible {
 		return a.Eligible
 	}
@@ -260,16 +326,29 @@ func better(a, b model.Score) bool {
 	return a.AuthID < b.AuthID
 }
 
-// Best is the cheapest eligible credential, and false when none is eligible.
-// The slice need not be sorted.
+// Best is the eligible credential the ranking puts first, and false when none
+// is eligible. The slice need not be sorted.
 func Best(scores []model.Score) (model.Score, bool) {
+	return first(scores, better)
+}
+
+// Cheapest is the eligible credential with the lowest Cost, ignoring the
+// expiry rule, and false when none is eligible. ShouldSwitch is judged against
+// it, so whether a binding moves is the same with the rule on or off; only
+// where a moving conversation lands follows the expiry order. The slice need
+// not be sorted.
+func Cheapest(scores []model.Score) (model.Score, bool) {
+	return first(scores, cheaper)
+}
+
+func first(scores []model.Score, less func(a, b model.Score) bool) (model.Score, bool) {
 	var best model.Score
 	found := false
 	for _, s := range scores {
 		if !s.Eligible {
 			continue
 		}
-		if !found || better(s, best) {
+		if !found || less(s, best) {
 			best, found = s, true
 		}
 	}
@@ -278,7 +357,8 @@ func Best(scores []model.Score) (model.Score, bool) {
 
 // ShouldSwitch reports whether an established binding moves to challenger. An
 // ineligible incumbent always yields; otherwise the challenger must win by more
-// than HysteresisMargin. An ineligible challenger never wins.
+// than HysteresisMargin. An ineligible challenger never wins. Only Cost is
+// compared: being expiring never moves a binding.
 func ShouldSwitch(cfg model.PaceConfig, incumbent model.Score, challenger model.Score) bool {
 	if !challenger.Eligible {
 		return false

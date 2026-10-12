@@ -106,7 +106,8 @@ func (in pickInput) refused(authID string) bool {
 //     that fails any of those fails over to the cold pick, except that a
 //     rejected binding stands when no other candidate can take the model.
 //  3. Cold pick: pace.Rank over the candidates with stale snapshots marked
-//     ineligible; the pace winner takes the session. When nothing is eligible
+//     ineligible; the pace winner takes the session, an expiring seat first
+//     when pace.expiry is on. When nothing is eligible
 //     but a session key exists, the candidate with the fewest live bindings
 //     takes it, preferring one the provider has neither refused nor reported
 //     full and breaking ties on the lowest id, so the conversation still gets
@@ -240,9 +241,12 @@ func (p *Plugin) pickByAffinity(in pickInput) (SchedulerPickResponse, bool) {
 		}
 		return p.pickCold(in, bound.AuthID, "bound credential is refused for this model"), true
 	}
-	best, hasBest := pace.Best(in.scores)
-	if hasBest && best.AuthID != bound.AuthID && !in.cfg.Affinity.OverrideThreshold &&
-		pace.ShouldSwitch(in.cfg.Pace, in.scoreOf(bound.AuthID), best) {
+	// Whether the binding moves is judged on cost alone, so a seat becoming
+	// expiring never moves a live conversation; where a moving one lands is
+	// the cold pick's, which follows the expiry order.
+	cheapest, hasCheapest := pace.Cheapest(in.scores)
+	if hasCheapest && cheapest.AuthID != bound.AuthID && !in.cfg.Affinity.OverrideThreshold &&
+		pace.ShouldSwitch(in.cfg.Pace, in.scoreOf(bound.AuthID), cheapest) {
 		return p.pickCold(in, bound.AuthID, "pace winner beats the binding by the hysteresis margin"), true
 	}
 	// A binding on a credential the provider reports as full is kept on

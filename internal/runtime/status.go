@@ -181,7 +181,7 @@ func ApplyHostState(row *model.AuthStatus) {
 		held = row.HostHeldUntil == nil || refused(row.History, *row.HostHeldUntil)
 	}
 	if held {
-		row.Score.Eligible, row.Score.Reason = false, model.ReasonNotCandidate
+		row.Score.Eligible, row.Score.Reason, row.Score.Expiring = false, model.ReasonNotCandidate, false
 	}
 }
 

@@ -69,3 +69,43 @@ Anthropic has neither refused nor reported full, then the one with the fewest
 live conversations. A request with no session id and no eligible seat goes to
 the host's own selector. A request the host pins to one seat leaves its
 conversation's binding alone.
+
+## Expiry window (fork)
+
+This fork adds an optional rule, `pace.expiry`, that is off by default. Off,
+the plugin picks exactly as described above.
+
+The cost order can let a seat's last few points lapse. Take seat A at 89% of
+its weekly quota with 21 hours to its reset, and seat B at 5% with 5.4 days
+left. At the defaults A costs about −0.07 and B about −0.20, so B takes every
+new conversation and A's last 11% expires unused.
+
+With `pace.expiry.enabled: true`, a seat is expiring when:
+
+- it is eligible: every gate above still applies first, so a refused, full,
+  unreadable, unread or stale seat is never expiring;
+- its all-models weekly window has an open period, and resets after now and
+  within `pace.expiry.window` (24h by default);
+- at least `pace.expiry.min-headroom` (3% by default) of that window is
+  unused; and
+- every model-family weekly window that applies to the request holds that
+  much too. A request whose family cap is nearly spent cannot spend the
+  expiring all-models quota, so for that family the seat is not expiring; for
+  other families it still is. A family window's own reset never makes a seat
+  expiring.
+
+Expiring seats rank ahead of every other eligible seat, the soonest weekly
+reset first, then by cost. The rest keep the cost order, and ineligible seats
+stay last. In the example A is expiring and takes the next new conversation,
+until a reading shows it under 3% left or its window resets.
+
+The rule places new conversations only. A bound conversation never moves
+because another seat became expiring: whether a binding moves is judged on
+cost alone, exactly as with the rule off, so with `override-threshold` off
+the hysteresis test compares the bound seat against the cheapest seat, not
+the expiring one. A conversation that does move, for any reason it would
+move without the rule, lands on the seat the expiry order puts first.
+
+The status page marks an expiring seat "expiring" in the weekly ranking and
+in each decision's score table, and its note on cost and ranking states the
+window and headroom while the rule is on.

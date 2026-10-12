@@ -90,7 +90,7 @@ var _ web.Syncer = (*runtime.Plugin)(nil)
 // Makefile reads pluginVersion from this line to name the installed library.
 const (
 	pluginName    = "claude-seat-pacer"
-	pluginVersion = "0.3.0"
+	pluginVersion = "0.3.1-jrn.1"
 	pluginAuthor  = "yuya-iwabuchi"
 	pluginRepo    = "https://github.com/yuya-iwabuchi/cpa-plugin-claude-seat-pacer"
 )
@@ -106,6 +106,9 @@ var configFields = []runtime.ConfigField{
 	{Name: "pace.curve-exponent", Type: "number", Description: "Exponent for the power shape; above 1.0 holds back early. Selects the power shape when pace.shape is unset, and is ignored by the sigmoid shape. Default 1.0."},
 	{Name: "pace.steepness", Type: "number", Description: "Slope through the sigmoid's midpoint. Ignored by the other shapes. Default 8.0."},
 	{Name: "pace.landing-target", Type: "number", Description: "How far each seat's plan runs ahead of an even pace. 1.10 finishes the week's quota about 9% early on the linear shape, which leans toward a seat near its reset; 1.0 finishes at the reset. Default 1.10."},
+	{Name: "pace.expiry.enabled", Type: "boolean", Description: "Rank a seat whose all-models weekly window resets within pace.expiry.window, with quota left, ahead of the cost order, soonest reset first. Live conversations stay where they are. Default false."},
+	{Name: "pace.expiry.window", Type: "string", Description: "How close to its weekly reset a seat counts as expiring. Default 24h; outside 1h to 7d falls back to the default."},
+	{Name: "pace.expiry.min-headroom", Type: "number", Description: "Unused share of the weekly quota, 0 to 1, a seat near its reset needs to count as expiring. Default 0.03."},
 	{Name: "quota.poll-interval", Type: "string", Description: "How often each credential's usage endpoint is read. Default 2m; a value below 30s falls back to the default. quota.max-staleness is raised to twice this when it is shorter."},
 	{Name: "web.enabled", Type: "boolean", Description: "Serve the status page, and the management route its data comes from. Default true."},
 }

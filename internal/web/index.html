@@ -717,6 +717,8 @@ svg.pace text.gap-label.gap-label-half { font-size: 9px; }
    families' lists cut one seat's name at one point rather than two. */
 .rank-cost { font: 600 12px/1.2 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-1); text-align: right; min-width: 6ch; }
 .rank-row[data-out] .rank-cost { color: var(--ink-3); font-weight: 500; }
+/* A seat pace.expiry ranks ahead of the cost order. */
+.rank-expiring { flex: none; font: 600 10px/1.2 var(--mono); letter-spacing: .04em; color: var(--ink-2); border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px; }
 /* A cost that cannot be read against its neighbours': another eligible row
    prints the same tenth, or a neighbour in the ranking sits close enough that
    the two figures can come out in the wrong order. The rank compares the
@@ -1957,15 +1959,35 @@ time[data-ts] { cursor: help; }
   }
 
   /* Mirrors internal/pace ranking for one request family: eligible first,
-     then the lowest Cost, then id. Rank #1 is the seat the pool pays least
-     to use. */
+     then an expiring seat (pace.expiry) ahead of the rest, two expiring seats
+     by the sooner 7d reset, then the lowest Cost, then id. Rank #1 is the
+     seat the next new conversation lands on. */
   function rankAuths(auths, fam) {
     return (auths || []).slice().sort(function (x, y) {
       var a = famScore(x, fam) || {}, b = famScore(y, fam) || {};
-      if (!!a.eligible !== !!b.eligible) return a.eligible ? -1 : 1;
-      if ((a.cost || 0) !== (b.cost || 0)) return (a.cost || 0) - (b.cost || 0);
-      return String(x.auth_id).localeCompare(String(y.auth_id));
+      return expiryOrder(a, b) ||
+        ((a.cost || 0) !== (b.cost || 0) ? (a.cost || 0) - (b.cost || 0) : 0) ||
+        String(x.auth_id).localeCompare(String(y.auth_id));
     });
+  }
+
+  /* The part of the ranking ahead of cost: eligible first, then expiring,
+     then the sooner 7d reset between two expiring seats; 0 where it leaves
+     the cost to decide. A score carries expiring only while pace.expiry is
+     on. */
+  function expiryOrder(a, b) {
+    if (!!a.eligible !== !!b.eligible) return a.eligible ? -1 : 1;
+    if (!!a.expiring !== !!b.expiring) return a.expiring ? -1 : 1;
+    if (a.expiring) return weeklyResetMs(a) - weeklyResetMs(b);
+    return 0;
+  }
+
+  function weeklyResetMs(score) {
+    var list = score.windows || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].kind === "seven_day") return Date.parse(list[i].resets_at) || 0;
+    }
+    return 0;
   }
 
   /* Seats the reader has hidden in this browser, by published id. The
@@ -4575,6 +4597,17 @@ time[data-ts] { cursor: help; }
       "is refusing the seat now, and a hollow dot labelled \u201Creset\u201D is an early reset.";
   }
 
+  /* The expiry rule in words while pace.expiry is on, and nothing while it
+     is off. The window arrives in nanoseconds, as Go encodes a Duration. */
+  function expiryText(ex) {
+    if (!ex || !ex.enabled) return "";
+    return " pace.expiry is on: an eligible seat whose " + WEEKLY_SHORT + " window resets within " +
+      (num(ex.window) ? durText(Math.round(ex.window / 1e9)) : "—") + " with at least " +
+      ptsRound(ex.min_headroom) + " of it left, and as much left on a family window that applies, is marked " +
+      "expiring and ranks ahead of every other eligible seat, the soonest reset first. A bound conversation " +
+      "never moves for it.";
+  }
+
   /* One entry of a note: the term that names the topic, and the definition
      the caller fills. */
   function def(dl, term) {
@@ -4657,7 +4690,7 @@ time[data-ts] { cursor: help; }
       (num(wts.hysteresis_margin)
         ? " With affinity.override-threshold off, a challenger must undercut a bound seat's cost by " +
           ptsRound(wts.hysteresis_margin) + " to take its conversation."
-        : "")));
+        : "") + expiryText(wts.expiry)));
 
     var g = def(dl, "what makes a seat ineligible");
     g.appendChild(document.createTextNode("A seat takes no new conversation while a window that applies to the " +
@@ -6665,6 +6698,10 @@ time[data-ts] { cursor: help; }
       /* A seat the host does not offer has no lane state of its own, so it
          is read by its hold. */
       mark.appendChild(h("span", "sr-only", ", " + (sc && sc.reason === "not-a-candidate" ? verdict.word : meta.label)));
+      if (elig && sc.expiring) {
+        mark.appendChild(tipOnly(h("span", "rank-expiring", "expiring"),
+          "its 7d window resets within pace.expiry.window with quota left, so it ranks ahead of the cost order"));
+      }
       li.appendChild(mark);
       var cost = h("span", "rank-cost", costText(sc));
       if (elig && outside) {
@@ -6877,8 +6914,7 @@ time[data-ts] { cursor: help; }
 
     var tb = h("tbody", "");
     dec.scores.slice().sort(function (a, b) {
-      if (!!a.eligible !== !!b.eligible) return a.eligible ? -1 : 1;
-      return (a.cost || 0) - (b.cost || 0);
+      return expiryOrder(a, b) || (a.cost || 0) - (b.cost || 0);
     }).forEach(function (s) {
       var tr = h("tr", "");
       var td0 = h("td", "");
@@ -6897,6 +6933,7 @@ time[data-ts] { cursor: help; }
       var tdE = h("td", "");
       tdE.appendChild(s.eligible ? chip("eligible", "good", "✓")
                                  : chip(reasonText(s.reason), "critical", "✕"));
+      if (s.expiring) tdE.appendChild(chip("expiring", "info"));
       tr.appendChild(tdE);
 
       var tdW = h("td", "");

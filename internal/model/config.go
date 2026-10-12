@@ -99,6 +99,27 @@ type PaceConfig struct {
 	// HysteresisMargin is the score gap a challenger must beat before an
 	// established binding moves. Zero makes routing flap at window edges.
 	HysteresisMargin float64 `yaml:"hysteresis-margin" json:"hysteresis_margin"`
+
+	// Expiry ranks a credential whose all-models weekly window is about to
+	// reset with quota left ahead of every other eligible credential. It is
+	// off by default, and off leaves the ranking as the cost alone orders it.
+	Expiry ExpiryConfig `yaml:"expiry" json:"expiry"`
+}
+
+// ExpiryConfig is the expiry-window rule. An eligible credential is expiring
+// when its all-models weekly window is open, resets within Window of now, and
+// holds at least MinHeadroom of its budget unused, as does every model-family
+// weekly window bearing on the request. Expiring credentials rank ahead of
+// the rest, soonest weekly reset first. The rule orders new conversations
+// only: a binding never moves because another credential became expiring.
+type ExpiryConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Window is how close to its weekly reset a credential has to be to
+	// count as expiring, 1h to 7d.
+	Window time.Duration `yaml:"window" json:"window"`
+	// MinHeadroom is the unused fraction of the weekly budget, above 0 and at
+	// most 1, below which a credential near its reset is not worth preferring.
+	MinHeadroom float64 `yaml:"min-headroom" json:"min_headroom"`
 }
 
 // Curve shapes for PaceConfig.Shape.
@@ -163,6 +184,11 @@ func Defaults() Config {
 			SessionWeight:    0,
 			ScopedWeight:     0.5,
 			HysteresisMargin: 0.05,
+			Expiry: ExpiryConfig{
+				Enabled:     false,
+				Window:      24 * time.Hour,
+				MinHeadroom: 0.03,
+			},
 		},
 		Quota: QuotaConfig{
 			PollInterval:   2 * time.Minute,
@@ -261,6 +287,27 @@ func (c *Config) Normalize() (warnings []string) {
 	if c.Pace.HysteresisMargin < 0 {
 		c.Pace.HysteresisMargin = 0
 	}
+	// An unset window reads as the default. One the operator set outside the
+	// range falls back to the default too, and says so: an expiry window
+	// shorter than an hour never catches a credential between polls, and one
+	// longer than the week covers every credential.
+	switch w := c.Pace.Expiry.Window; {
+	case w == 0:
+		c.Pace.Expiry.Window = d.Pace.Expiry.Window
+	case w < minExpiryWindow || w > maxExpiryWindow:
+		warnings = append(warnings, outOfRange("pace.expiry.window", w, minExpiryWindow, maxExpiryWindow, d.Pace.Expiry.Window))
+		c.Pace.Expiry.Window = d.Pace.Expiry.Window
+	}
+	// Zero reads as unset, as it does for the other fractions here; a
+	// headroom of zero would add nothing the fullness gate does not already
+	// hold, so the smallest useful setting is any value above it.
+	switch h := c.Pace.Expiry.MinHeadroom; {
+	case h == 0:
+		c.Pace.Expiry.MinHeadroom = d.Pace.Expiry.MinHeadroom
+	case math.IsNaN(h) || h < 0 || h > 1:
+		warnings = append(warnings, outOfRange("pace.expiry.min-headroom", h, 0, 1, d.Pace.Expiry.MinHeadroom))
+		c.Pace.Expiry.MinHeadroom = d.Pace.Expiry.MinHeadroom
+	}
 	if c.Quota.PollInterval < 30*time.Second {
 		c.Quota.PollInterval = d.Quota.PollInterval
 	}
@@ -313,11 +360,19 @@ const (
 	maxWeight         = 100.0
 	maxRequestTimeout = time.Minute
 	maxHistoryLimit   = 10000
+	minExpiryWindow   = time.Hour
+	maxExpiryWindow   = 7 * 24 * time.Hour
 )
 
 // aboveBound is the warning for a setting clamped to its upper bound.
 func aboveBound[T int | float64 | time.Duration](key string, given, bound T) string {
 	return fmt.Sprintf("%s %v is above its bound, so it runs at %v", key, given, bound)
+}
+
+// outOfRange is the warning for a setting outside its range that falls back
+// to its default.
+func outOfRange[T float64 | time.Duration](key string, given, lo, hi, def T) string {
+	return fmt.Sprintf("%s %v is outside %v to %v, so it runs at the default %v", key, given, lo, hi, def)
 }
 
 // usageHost is the one remote host a usage URL may name: the host that issued

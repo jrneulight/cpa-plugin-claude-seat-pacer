@@ -653,5 +653,6 @@ func finitePace(p model.PaceConfig) model.PaceConfig {
 	p.SessionWeight = finite(p.SessionWeight)
 	p.ScopedWeight = finite(p.ScopedWeight)
 	p.HysteresisMargin = finite(p.HysteresisMargin)
+	p.Expiry.MinHeadroom = finite(p.Expiry.MinHeadroom)
 	return p
 }
