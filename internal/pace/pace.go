@@ -87,7 +87,25 @@ func sigmoid(k, elapsed float64) float64 {
 //
 // Snapshot age is not gated here; the caller applies QuotaConfig.MaxStaleness
 // and model.ReasonStale.
+//
+// ScoreAuth scores a credential no reserve names; ScoreAuthWithin is the
+// general form.
 func ScoreAuth(cfg model.PaceConfig, snap model.AuthSnapshot, modelID string, now time.Time) model.Score {
+	return ScoreAuthWithin(cfg, snap, nil, modelID, now)
+}
+
+// ScoreAuthWithin is ScoreAuth for a credential held to reserve ceilings
+// (model.Config.Reserves). A nil or empty ceilings scores exactly as
+// ScoreAuth does. With a ceiling c on a window:
+//
+//   - the window gates at c rather than at full: a bearing window whose
+//     utilization is at least c makes the credential ineligible with
+//     model.ReasonReserve, behind a refusal and an unreadable reading and
+//     ahead of fullness, since a window at full is past every ceiling;
+//   - its slack is Target(elapsed) - utilization/c, so the window is paced
+//     against the share of it the account may use rather than the whole;
+//   - the expiry rule measures its headroom as c - utilization.
+func ScoreAuthWithin(cfg model.PaceConfig, snap model.AuthSnapshot, ceilings model.Ceilings, modelID string, now time.Time) model.Score {
 	score := model.Score{AuthID: snap.AuthID, Eligible: true}
 	if len(snap.Windows) == 0 {
 		score.Eligible = false
@@ -107,24 +125,34 @@ func ScoreAuth(cfg model.PaceConfig, snap model.AuthSnapshot, modelID string, no
 		bearing    int
 		rejected   bool
 		spent      bool
+		reserved   bool
 		unreadable bool
 	)
 	for _, w := range snap.Windows {
 		elapsed := w.Elapsed(now)
 		target := Target(cfg, elapsed)
+		ceiling, capped := ceilings.For(w)
+		used := w.Utilization
+		if capped {
+			used = w.Utilization / ceiling
+		}
 		ws := model.WindowScore{
 			Kind:        w.Kind,
 			Scope:       w.Scope,
 			Elapsed:     elapsed,
 			Target:      target,
 			Utilization: w.Utilization,
-			Slack:       target - w.Utilization,
+			Slack:       target - used,
 			ResetsAt:    w.ResetsAt,
+		}
+		if capped {
+			ws.Ceiling = ceiling
 		}
 		if w.BearsOn(family) {
 			bearing++
 			rejected = rejected || w.Blocking()
 			spent = spent || w.Utilization >= 1
+			reserved = reserved || (capped && w.Utilization >= ceiling)
 			unreadable = unreadable || math.IsNaN(w.Utilization) || math.IsInf(w.Utilization, 0)
 			if open(w) {
 				ws.Weight = weightOf(cfg, w)
@@ -150,12 +178,15 @@ func ScoreAuth(cfg model.PaceConfig, snap model.AuthSnapshot, modelID string, no
 	case unreadable:
 		score.Eligible = false
 		score.Reason = model.ReasonBadReading
+	case reserved:
+		score.Eligible = false
+		score.Reason = model.ReasonReserve
 	case spent:
 		score.Eligible = false
 		score.Reason = model.ReasonSpent
 	}
 	if score.Eligible && cfg.Expiry.Enabled {
-		score.Expiring = expiring(cfg.Expiry, snap.Windows, family, now)
+		score.Expiring = expiring(cfg.Expiry, snap.Windows, ceilings, family, now)
 	}
 	return score
 }
@@ -170,7 +201,16 @@ func ScoreAuth(cfg model.PaceConfig, snap model.AuthSnapshot, modelID string, no
 // family window's own reset does not make a credential expiring, since
 // letting it lapse loses only that family's share. A family window that does
 // not bear on the request is not read.
-func expiring(cfg model.ExpiryConfig, windows []model.Window, family string, now time.Time) bool {
+//
+// Headroom is measured to a window's reserve ceiling where one is set, and to
+// full otherwise: quota above a ceiling is not this credential's to spend.
+func expiring(cfg model.ExpiryConfig, windows []model.Window, ceilings model.Ceilings, family string, now time.Time) bool {
+	headroom := func(w model.Window) float64 {
+		if c, ok := ceilings.For(w); ok {
+			return c - w.Utilization
+		}
+		return 1 - w.Utilization
+	}
 	found := false
 	for _, w := range windows {
 		switch {
@@ -179,12 +219,12 @@ func expiring(cfg model.ExpiryConfig, windows []model.Window, family string, now
 				continue
 			}
 			left := w.ResetsAt.Sub(now)
-			if !open(w) || left <= 0 || left > cfg.Window || 1-w.Utilization < cfg.MinHeadroom {
+			if !open(w) || left <= 0 || left > cfg.Window || headroom(w) < cfg.MinHeadroom {
 				return false
 			}
 			found = true
 		case w.Kind == model.WindowWeeklyScoped && w.BearsOn(family):
-			if 1-w.Utilization < cfg.MinHeadroom {
+			if headroom(w) < cfg.MinHeadroom {
 				return false
 			}
 		}
@@ -218,6 +258,12 @@ func weightOf(cfg model.PaceConfig, w model.Window) float64 {
 // scores ineligible with model.ReasonNoSnapshot. The arguments are not
 // modified.
 func Rank(cfg model.PaceConfig, snaps map[string]model.AuthSnapshot, candidateIDs []string, modelID string, now time.Time) []model.Score {
+	return RankWithin(cfg, snaps, nil, candidateIDs, modelID, now)
+}
+
+// RankWithin is Rank with each candidate scored under the reserve ceilings
+// keyed by its id, as ScoreAuthWithin scores it. A nil map ranks as Rank does.
+func RankWithin(cfg model.PaceConfig, snaps map[string]model.AuthSnapshot, ceilings map[string]model.Ceilings, candidateIDs []string, modelID string, now time.Time) []model.Score {
 	scores := make([]model.Score, 0, len(candidateIDs))
 	seen := make(map[string]struct{}, len(candidateIDs))
 	for _, id := range candidateIDs {
@@ -230,7 +276,7 @@ func Rank(cfg model.PaceConfig, snaps map[string]model.AuthSnapshot, candidateID
 			scores = append(scores, model.Score{AuthID: id, Reason: model.ReasonNoSnapshot})
 			continue
 		}
-		s := ScoreAuth(cfg, snap, modelID, now)
+		s := ScoreAuthWithin(cfg, snap, ceilings[id], modelID, now)
 		// The candidate id the host offered is authoritative; a snapshot may
 		// carry an empty or differently spelled AuthID.
 		s.AuthID = id
@@ -244,23 +290,25 @@ func Rank(cfg model.PaceConfig, snaps map[string]model.AuthSnapshot, candidateID
 // credential with no reading, or one whose reading is older than
 // QuotaConfig.MaxStaleness, is not scored at all and carries the reason in
 // place of a window breakdown. The id the caller holds is authoritative, since
-// a snapshot may carry an empty or differently spelled AuthID.
-func ScoreWithStaleness(cfg model.Config, snap model.AuthSnapshot, hasSnap bool, id, modelID string, now time.Time) model.Score {
+// a snapshot may carry an empty or differently spelled AuthID. ceilings are
+// the reserve ceilings on the credential, nil when no reserve names it.
+func ScoreWithStaleness(cfg model.Config, snap model.AuthSnapshot, hasSnap bool, ceilings model.Ceilings, id, modelID string, now time.Time) model.Score {
 	switch {
 	case !hasSnap:
 		return model.Score{AuthID: id, Reason: model.ReasonNoSnapshot}
 	case snap.Stale(now, cfg.Quota.MaxStaleness):
 		return model.Score{AuthID: id, Reason: model.ReasonStale}
 	}
-	score := ScoreAuth(cfg.Pace, snap, modelID, now)
+	score := ScoreAuthWithin(cfg.Pace, snap, ceilings, modelID, now)
 	score.AuthID = id
 	return score
 }
 
 // RankWithStaleness is Rank with a snapshot older than QuotaConfig.MaxStaleness
 // treated as no snapshot, then named as stale so a reader distinguishes "never
-// read" from "read too long ago".
-func RankWithStaleness(cfg model.Config, snaps map[string]model.AuthSnapshot, candidateIDs []string, modelID string, now time.Time) []model.Score {
+// read" from "read too long ago". ceilings holds the reserve ceilings by
+// credential id, nil when no reserve names any candidate.
+func RankWithStaleness(cfg model.Config, snaps map[string]model.AuthSnapshot, ceilings map[string]model.Ceilings, candidateIDs []string, modelID string, now time.Time) []model.Score {
 	fresh := make(map[string]model.AuthSnapshot, len(snaps))
 	stale := make(map[string]bool)
 	for id, snap := range snaps {
@@ -270,7 +318,7 @@ func RankWithStaleness(cfg model.Config, snaps map[string]model.AuthSnapshot, ca
 		}
 		fresh[id] = snap
 	}
-	scores := Rank(cfg.Pace, fresh, candidateIDs, modelID, now)
+	scores := RankWithin(cfg.Pace, fresh, ceilings, candidateIDs, modelID, now)
 	for i := range scores {
 		if stale[scores[i].AuthID] {
 			scores[i].Reason = model.ReasonStale

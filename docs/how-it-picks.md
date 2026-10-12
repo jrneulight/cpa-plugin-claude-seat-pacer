@@ -109,3 +109,54 @@ move without the rule, lands on the seat the expiry order puts first.
 The status page marks an expiring seat "expiring" in the weekly ranking and
 in each decision's score table, and its note on cost and ranking states the
 window and headroom while the rule is on.
+
+## Account reserves (fork)
+
+This fork adds an optional `reserves` list, empty by default. Empty, the
+plugin picks exactly as described above.
+
+A reserve holds back part of an account's quota for use outside this plugin,
+for instance another router that refuses the account past 70%. Without one
+the plugin cannot see that limit: it ranks the account as a seat with 30% left
+and sends it new conversations that the other router refuses.
+
+```yaml
+reserves:
+  - accounts: [charles@example.com]
+    ceilings: {five_hour: 0.70, seven_day: 0.70, fable: 0.70}
+```
+
+An account matches by its auth id, credential file name, email, host label
+or note, in any case. For a seat a reserve names, with ceiling `c` on a
+window:
+
+- **Eligibility.** The seat takes no request once a window that applies to
+  the request reaches `c`; the status page gives the reason "at reserve
+  ceiling" (`reserve`). Which windows apply is the same rule as everywhere
+  else: the 5-hour and all-models weekly windows apply to every request, and a
+  family's weekly window only to that family's models, so a `fable` ceiling
+  holds the seat off Fable requests alone. A refusal or an unreadable reading
+  is reported ahead of the reserve, and the reserve ahead of a full window. A
+  window with no reading, or a reading older than `max-staleness`, is treated
+  as it is without a reserve.
+- **Pace.** The window is paced against its ceiling as its full budget. Its
+  term in the cost is `weight × (utilization / c − target)`, where `target`
+  is the plan's value at the window's elapsed fraction, so at `c = 0.7` a week
+  half gone at 35% used reads as 50% of its usable budget, against a plan of
+  55%. Without the reserve the same seat reads as 20 points behind its plan
+  and outranks a seat that is in fact further behind.
+- **Expiry.** With `pace.expiry` on, the headroom the rule needs is measured
+  to the ceiling: `c − utilization`, not `1 − utilization`. A week at 57%
+  under a 70% ceiling has 13% headroom, which clears the default 3%
+  `min-headroom` but not a `min-headroom` of 0.15.
+- **Bindings.** A bound conversation leaves a seat that reaches a ceiling,
+  as it leaves one Anthropic has refused, whatever `override-threshold` says:
+  the next request there would be refused for certain. With no other seat able
+  to take the model it stays, as it does after a refusal. A subagent does not
+  follow its parent onto such a seat, and a seat at its ceiling is the last
+  choice when no seat is eligible.
+
+The status page tags a reserved seat "reserve" in the ranking, with its
+ceilings in the tooltip, and the `/status` management route carries the
+configured `reserves` and each seat's `ceilings`. The page's own data route
+carries the ceilings but not the list, since its accounts are addresses.

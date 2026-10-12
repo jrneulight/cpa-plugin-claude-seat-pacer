@@ -2,6 +2,7 @@ package model
 
 import (
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -475,5 +476,111 @@ func TestNormalizeBoundsTheExpiryRule(t *testing.T) {
 				t.Errorf("warned %q, want %q", warnings, tc.wantWarning)
 			}
 		})
+	}
+}
+
+// Reserves are off by default. Normalize folds accounts and ceiling keys, and
+// drops with a warning a ceiling outside (0, 1], a key naming no window, and a
+// reserve left with no account or no ceiling. A warning names a reserve by
+// position, never by account.
+func TestNormalizeValidatesReserves(t *testing.T) {
+	if d := Defaults(); d.Reserves != nil {
+		t.Fatalf("default reserves = %v, want none", d.Reserves)
+	}
+	for _, tc := range []struct {
+		name     string
+		in       []ReserveConfig
+		want     []ReserveConfig
+		warnings []string
+	}{
+		{"none", nil, nil, nil},
+		{"folded",
+			[]ReserveConfig{{Accounts: []string{" Charles@NeulightCo.com ", ""}, Ceilings: Ceilings{"Five_Hour": 0.7, "seven_day": 1, "Fable": 0.7}}},
+			[]ReserveConfig{{Accounts: []string{"charles@neulightco.com"}, Ceilings: Ceilings{"five_hour": 0.7, "seven_day": 1, "fable": 0.7}}},
+			nil},
+		{"two spellings of one key keep the lower",
+			[]ReserveConfig{{Accounts: []string{"a"}, Ceilings: Ceilings{"fable": 0.8, "Fable": 0.6}}},
+			[]ReserveConfig{{Accounts: []string{"a"}, Ceilings: Ceilings{"fable": 0.6}}},
+			nil},
+		{"bad ceilings dropped",
+			[]ReserveConfig{{Accounts: []string{"a"}, Ceilings: Ceilings{"five_hour": 0, "seven_day": 1.2, "opus": math.NaN(), "monthly": 0.5, "sonnet": 0.5}}},
+			[]ReserveConfig{{Accounts: []string{"a"}, Ceilings: Ceilings{"sonnet": 0.5}}},
+			[]string{
+				"reserves[0].ceilings.five_hour 0 is not above 0 and at most 1, so it is ignored",
+				"reserves[0].ceilings.monthly names no window; use five_hour, seven_day or a model family such as fable. It is ignored",
+				"reserves[0].ceilings.opus NaN is not above 0 and at most 1, so it is ignored",
+				"reserves[0].ceilings.seven_day 1.2 is not above 0 and at most 1, so it is ignored",
+			}},
+		{"empty reserves dropped",
+			[]ReserveConfig{
+				{Accounts: []string{" "}, Ceilings: Ceilings{"five_hour": 0.5}},
+				{Accounts: []string{"b"}, Ceilings: Ceilings{"weekly": 0.5}},
+				{Accounts: []string{"c"}, Ceilings: Ceilings{"five_hour": -1}},
+			},
+			[]ReserveConfig{},
+			[]string{
+				"reserves[0] names no account, so it is ignored",
+				"reserves[1].ceilings.weekly names no window; use five_hour, seven_day or a model family such as fable. It is ignored",
+				"reserves[1] sets no usable ceiling, so it is ignored",
+				"reserves[2].ceilings.five_hour -1 is not above 0 and at most 1, so it is ignored",
+				"reserves[2] sets no usable ceiling, so it is ignored",
+			}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{Reserves: tc.in}
+			warnings := cfg.Normalize()
+			if !reflect.DeepEqual(cfg.Reserves, tc.want) {
+				t.Errorf("reserves = %+v, want %+v", cfg.Reserves, tc.want)
+			}
+			if !reflect.DeepEqual(warnings, tc.warnings) {
+				t.Errorf("warnings = %q, want %q", warnings, tc.warnings)
+			}
+		})
+	}
+}
+
+// A reserve matches any of a credential's names case-insensitively, and two
+// reserves naming one credential keep the lower ceiling on each window.
+func TestCeilingsForMatchesAnyName(t *testing.T) {
+	cfg := Config{Reserves: []ReserveConfig{
+		{Accounts: []string{"Charles@NeulightCo.com"}, Ceilings: Ceilings{"five_hour": 0.7, "seven_day": 0.8}},
+		{Accounts: []string{"claude-charles.json"}, Ceilings: Ceilings{"seven_day": 0.6}},
+	}}
+	cfg.Normalize()
+	for _, tc := range []struct {
+		name  string
+		names []string
+		want  Ceilings
+	}{
+		{"email", []string{"some-id", "x.json", "CHARLES@neulightco.com"}, Ceilings{"five_hour": 0.7, "seven_day": 0.8}},
+		{"file name", []string{"Claude-Charles.json"}, Ceilings{"seven_day": 0.6}},
+		{"both keep the lower", []string{"claude-charles.json", "charles@neulightco.com"}, Ceilings{"five_hour": 0.7, "seven_day": 0.6}},
+		{"neither", []string{"other@neulightco.com", ""}, nil},
+	} {
+		if got := cfg.CeilingsFor(tc.names...); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// A ceiling key names a window by kind, and a family window by its scope's
+// family whatever the display name's spelling.
+func TestCeilingsForWindow(t *testing.T) {
+	c := Ceilings{"five_hour": 0.5, "fable": 0.7}
+	for _, tc := range []struct {
+		w    Window
+		want float64
+		ok   bool
+	}{
+		{Window{Kind: WindowSession}, 0.5, true},
+		{Window{Kind: WindowWeekly}, 0, false},
+		{Window{Kind: WindowWeeklyScoped, Scope: "Fable"}, 0.7, true},
+		{Window{Kind: WindowWeeklyScoped, Scope: "Claude Fable 5"}, 0.7, true},
+		{Window{Kind: WindowWeeklyScoped, Scope: "Opus"}, 0, false},
+		{Window{Kind: WindowWeeklyScoped, Scope: "Mystery"}, 0, false},
+	} {
+		if got, ok := c.For(tc.w); got != tc.want || ok != tc.ok {
+			t.Errorf("%+v: %v %v, want %v %v", tc.w, got, ok, tc.want, tc.ok)
+		}
 	}
 }

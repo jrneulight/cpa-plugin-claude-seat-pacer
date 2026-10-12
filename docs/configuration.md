@@ -75,6 +75,7 @@ open conversation one prompt-cache miss.
       web:
         enabled: true           # serve the status page
         history-limit: 500      # routing decisions kept for the page; 1 to 10000
+      reserves: []              # fork only; see "Account reserves (fork)" in how-it-picks.md
 ```
 
 Durations take Go syntax (`30s`, `2m`, `1h`). A weight above 100, a
@@ -91,6 +92,27 @@ plugin disabled.
 0 or above 1, run at their defaults (24h and 0.03), and the status page says
 so. A zero leaves either at its default. Durations have no day unit, so write
 three days as `72h`; `3d` does not parse and loads the plugin disabled.
+
+`reserves` is a list, empty by default, and empty routes exactly as without
+it. Each entry holds some accounts to a share of their windows:
+
+```yaml
+      reserves:
+        - accounts: [charles@example.com]   # auth id, file name, email, label or note; any case
+          ceilings:
+            five_hour: 0.70                 # the 5-hour window
+            seven_day: 0.70                 # the all-models weekly window
+            fable: 0.70                     # a model family's weekly window: opus, sonnet, fable or haiku
+```
+
+A ceiling has to be above 0 and at most 1. One outside that range, or a key
+that names no window, is dropped, and the status page says which, naming the
+entry by position (`reserves[0].ceilings.monthly`) rather than by account. An
+entry left with no account or no ceiling is dropped the same way. An account
+that matches no credential the host lists is reported too
+(`reserves[0].accounts[1]`). Where two entries name one credential, each
+window takes the lower ceiling. The
+Management Center has no field for `reserves`; set it in the config file.
 
 The Management Center saves each field as a top-level dotted key, such as
 `affinity.ttl: 2h` or `pace.expiry.enabled: true`, which wins over the nested

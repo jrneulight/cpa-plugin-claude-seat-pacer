@@ -167,7 +167,7 @@ func TestExpiryRuleRanksTheNearResetSeatFirst(t *testing.T) {
 			for _, s := range tc.snaps {
 				ids = append(ids, s.AuthID)
 			}
-			scores := RankWithStaleness(cfg, snapshots(tc.snaps...), ids, modelID, now)
+			scores := RankWithStaleness(cfg, snapshots(tc.snaps...), nil, ids, modelID, now)
 			if got := rankedIDs(scores); !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("rank = %v, want %v", got, tc.want)
 			}
@@ -196,14 +196,14 @@ func TestExpiryRuleSkipsAStaleSeat(t *testing.T) {
 	cfg := expiryConfig(true)
 	a := nearReset(testNow)
 	a.ObservedAt = testNow.Add(-time.Hour)
-	scores := RankWithStaleness(cfg, snapshots(a, farFromReset(testNow)), []string{"a", "b"}, opus, testNow)
+	scores := RankWithStaleness(cfg, snapshots(a, farFromReset(testNow)), nil, []string{"a", "b"}, opus, testNow)
 	if got := rankedIDs(scores); !reflect.DeepEqual(got, []string{"b", "a"}) {
 		t.Fatalf("rank = %v, want b ahead of the stale a", got)
 	}
 	if s := scoreOf(t, scores, "a"); s.Expiring || s.Reason != model.ReasonStale {
 		t.Errorf("stale a = expiring %v reason %q", s.Expiring, s.Reason)
 	}
-	if s := ScoreWithStaleness(cfg, a, true, "a", opus, testNow); s.Expiring {
+	if s := ScoreWithStaleness(cfg, a, true, nil, "a", opus, testNow); s.Expiring {
 		t.Error("ScoreWithStaleness marked a stale seat expiring")
 	}
 }

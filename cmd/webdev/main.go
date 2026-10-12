@@ -506,7 +506,7 @@ func (f *fixture) rankAt(snaps map[string]model.AuthSnapshot, ids []string, mode
 		snap.ObservedAt = at.Add(-f.observedAge[id])
 		stamped[id] = snap
 	}
-	return pace.RankWithStaleness(f.cfg, stamped, ids, modelID, at)
+	return pace.RankWithStaleness(f.cfg, stamped, nil, ids, modelID, at)
 }
 
 // rows is one status row per fixture credential, in the id order
@@ -525,7 +525,7 @@ func (f *fixture) rows(now time.Time, modelID string) []model.AuthStatus {
 			snap.Windows = []model.Window{}
 		}
 		a.Snapshot = snap
-		a.Score = pace.ScoreWithStaleness(f.cfg, snap, ok, a.AuthID, modelID, now)
+		a.Score = pace.ScoreWithStaleness(f.cfg, snap, ok, nil, a.AuthID, modelID, now)
 		if until, held := f.heldUntil[a.AuthID]; held {
 			a.HostHeldUntil = &until
 		}

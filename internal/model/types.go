@@ -308,6 +308,11 @@ type WindowScore struct {
 	Slack float64 `json:"slack"`
 	// Weight is the coefficient this window contributes with.
 	Weight float64 `json:"weight"`
+	// Ceiling is the reserve ceiling on this window (Config.Reserves), and
+	// zero where none is set. With one set, Slack is Target less
+	// Utilization/Ceiling: the window is paced against the share of it the
+	// account may use.
+	Ceiling float64 `json:"ceiling,omitempty"`
 	// ResetsAt is carried through so the timeline view can plot the window
 	// without a second lookup.
 	ResetsAt time.Time `json:"resets_at"`
@@ -321,6 +326,10 @@ const (
 	// ReasonSpent marks a credential whose bearing window the provider reports
 	// as full: the endpoint says there is nothing left in that window.
 	ReasonSpent = "spent"
+	// ReasonReserve marks a credential a reserve names whose bearing window
+	// has reached the reserve's ceiling (Config.Reserves): the quota above
+	// the ceiling is held back for another use.
+	ReasonReserve = "reserve"
 	// ReasonFetchFailed marks a credential whose usage read has never
 	// succeeded, so nothing is known about its caps. It is distinct from
 	// ReasonNoWindow, which says the caps were read and none of them applies.
@@ -451,6 +460,9 @@ type AuthStatus struct {
 	Snapshot      AuthSnapshot `json:"snapshot"`
 	// Score is the pace evaluation for Status.Model at Status.Now.
 	Score Score `json:"score"`
+	// Ceilings are the reserve ceilings set on this credential
+	// (Config.Reserves), absent when no reserve names it.
+	Ceilings Ceilings `json:"ceilings,omitempty"`
 	// Bindings counts live conversations pinned to this credential.
 	Bindings int        `json:"bindings"`
 	Cache    CacheStats `json:"cache"`
